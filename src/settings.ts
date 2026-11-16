@@ -17,7 +17,8 @@ type Field = Leaf | Group;
 type Leaf = Base &
   (
     | { kind: "switch"; key: Path; invert?: boolean }
-    | { kind: "text"; key: Path; placeholder?: string; secret?: boolean; suggest?: string[] }
+    | { kind: "text"; key: Path; placeholder?: string; secret?: boolean; suggest?: string[]; /** Makes it a box of this many lines. */ lines?: number }
+    | { kind: "date"; key: Path }
     | { kind: "select"; key: Path; options: [value: string, label: string][] }
     | { kind: "number"; key: Path; min: number; max: number; unit: string }
     | {
@@ -51,6 +52,23 @@ const transcribes = (c: Config) => c.hear.provider === "elevenlabs";
 const replies = (c: Config) => c.hear.followUp > 0;
 
 const SECTIONS: Section[] = [
+  {
+    id: "you",
+    title: "You",
+    fields: [
+      { kind: "text", key: "you.name", label: "Name" },
+      { kind: "text", key: "you.occupation", label: "What you do", placeholder: "Designer, student, night-shift nurse…" },
+      { kind: "date", key: "you.birthday", label: "Birthday" },
+      {
+        kind: "text",
+        key: "you.language",
+        label: "He speaks",
+        placeholder: "Whatever you speak to him",
+        suggest: ["English", "Deutsch", "Français", "Español", "Italiano", "Nederlands", "Polski", "Português", "日本語"],
+      },
+      { kind: "text", key: "you.notes", label: "Anything else", lines: 5 },
+    ],
+  },
   {
     id: "general",
     title: "General",
@@ -242,14 +260,16 @@ function control(field: Leaf, id: string): HTMLElement {
       return el("div", { className: "control" }, input);
     }
     case "text": {
-      const input = el("input", { type: field.secret ? "password" : "text", id, placeholder: field.placeholder ?? "", spellcheck: false, autocomplete: "off" });
+      const input = field.lines
+        ? el("textarea", { id, rows: field.lines, maxLength: 800, placeholder: field.placeholder ?? "", spellcheck: false })
+        : el("input", { type: field.secret ? "password" : "text", id, placeholder: field.placeholder ?? "", spellcheck: false, autocomplete: "off" });
       const box = el("div", { className: "control" }, input);
       if (field.suggest) {
         const list = el("datalist", { id: `${id}-list` }, ...field.suggest.map((v) => el("option", { value: v })));
         input.setAttribute("list", list.id);
         box.append(list);
       }
-      if (field.secret) box.append(revealer(input));
+      if (field.secret && input instanceof HTMLInputElement) box.append(revealer(input));
       let timer = 0;
       const commit = () => {
         clearTimeout(timer);
@@ -265,6 +285,14 @@ function control(field: Leaf, id: string): HTMLElement {
         if (document.activeElement !== input) input.value = String(read(field.key));
       });
       return box;
+    }
+    case "date": {
+      const input = el("input", { type: "date", id });
+      input.addEventListener("change", () => write(field.key, input.value));
+      syncs.push(() => {
+        if (document.activeElement !== input) input.value = String(read(field.key));
+      });
+      return el("div", { className: "control" }, input);
     }
     case "select": {
       const select = el("select", { id }, ...field.options.map(([value, label]) => el("option", { value }, label)));

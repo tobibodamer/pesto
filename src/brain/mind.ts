@@ -146,7 +146,7 @@ export class Mind {
       },
     });
     const messages: Message[] = [
-      { role: "system", content: personaPrompt({ audioTags: voice.audible && /_v[34]/.test(config.voice.model), tools: !this.toolless }) },
+      { role: "system", content: personaPrompt({ audioTags: voice.audible && /_v[34]/.test(config.voice.model), tools: !this.toolless, you: config.you, today: new Date(journal.now()) }) },
       ...this.turns.flatMap((t): Message[] => [
         { role: "user", content: t.user },
         { role: "assistant", content: t.assistant },

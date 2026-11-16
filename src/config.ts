@@ -6,6 +6,18 @@ import { invoke } from "@tauri-apps/api/core";
  * DEFAULTS, so the file only needs the keys someone wants to change.
  */
 export interface Config {
+  /** The person he lives with. All of it is told to the mind. */
+  you: {
+    name: string;
+    /** Their work, studies or whatever fills their days. */
+    occupation: string;
+    /** "YYYY-MM-DD", or empty. */
+    birthday: string;
+    /** The language he speaks. Empty follows whatever they speak to him. */
+    language: string;
+    /** Anything else he should know, in their own words. */
+    notes: string;
+  };
   /** The big model that speaks and plans. Any OpenAI-compatible chat endpoint. */
   mind: {
     baseUrl: string;
@@ -94,6 +106,7 @@ export interface Config {
 }
 
 export const DEFAULTS: Config = {
+  you: { name: "", occupation: "", birthday: "", language: "", notes: "" },
   mind: { baseUrl: "", apiKey: "", model: "", temperature: 0.9, reasoningEffort: "low", quietSeconds: 240 },
   decider: { enabled: true, baseUrl: "http://triton:11434", model: "d1:2b-q8_0", speakAbove: 0.72 },
   voice: { provider: "none", apiKey: "", voiceId: "", model: "eleven_v4_turbo", stability: 0.35, volume: 0.9, captions: false, muted: false, width: 0.3 },

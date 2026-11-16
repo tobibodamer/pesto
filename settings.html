@@ -173,6 +173,8 @@
       input[type="text"],
       input[type="password"],
       input[type="number"],
+      input[type="date"],
+      textarea,
       select {
         flex: 1;
         min-width: 0;
@@ -188,10 +190,27 @@
       input[type="number"] {
         flex: 0 0 96px;
       }
-      input::placeholder {
+      input[type="date"] {
+        flex: 0 0 160px;
+      }
+      textarea {
+        height: auto;
+        padding: 7px 10px;
+        line-height: 1.4;
+        resize: none;
+      }
+      .row:has(textarea) {
+        align-items: start;
+      }
+      .row:has(textarea) .label {
+        padding-top: 7px;
+      }
+      input::placeholder,
+      textarea::placeholder {
         color: var(--faint);
       }
       input:focus,
+      textarea:focus,
       select:focus {
         border-color: var(--ink);
       }

@@ -6,6 +6,9 @@ use tauri::{AppHandle, Emitter, Manager};
 /// Written on first run so there is something to edit. The frontend fills in
 /// every key that is missing, so this only needs the ones people change.
 const TEMPLATE: &str = r#"{
+  "you": {
+    "name": ""
+  },
   "mind": {
     "baseUrl": "",
     "apiKey": "",

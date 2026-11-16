@@ -331,6 +331,7 @@ When a video or game takes the whole screen he is no longer on the desktop in fr
 | Sounds apart from the voice: their own switch and volume, playing without a voice provider, plus a volume for each group (reactions, breathing, can, bumps) in Settings → Sounds. Groups are set in `SOUNDS` in `src/voice/eleven.ts` | 🟡 not tried in the app |
 | More switches in the menu as features arrive (proactivity level, do not disturb) | ⬜ |
 | Settings window (`settings.html`, `src/settings.ts`): every config.json key plus the talk hotkey, saved as you go and applied live in the overlay; opened from the tray or his menu | ✅ |
+| What he knows about the person (Settings → You, `you` in config.json): name, what they do, birthday, the language he speaks, free notes. Goes into the persona prompt as "Who they are". With no name he asks once and points to the settings | 🟡 not tried in the app |
 | Start with Windows | ⬜ |
 | Installer build | ⬜ |
 
