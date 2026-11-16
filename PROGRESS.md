@@ -74,6 +74,7 @@ In order. Each step leaves the app in a runnable state.
 | Screen vision: screenshots to the model on demand | ⬜ |
 | Focused element in any window (UI Automation): kind, name, rect, text caret | 🟡 `sense/focus.rs`, seen live; the caret is untested. He glances at a newly focused element and watches some bursts of typing; the model gets one line about it |
 | Elements that change, move or matter most in a window | ⬜ |
+| Window outlines on demand (UI Automation, one scan of at most ~150 ms per window, kept until it resizes or changes title): toolbars, tab strips, panes as shelves | 🟡 `sense/skeleton.rs`, `src/sense/skeleton.ts`; scanned when he is picked up, carried, lands or picks where to go. Chromium and Electron apps, Terminal and Spotify give good outlines; Firefox and Thunderbird give none |
 | UI element positions (buttons, scrollbar, tab strip, close button) for pointing and clicking | ⬜ |
 | Recycle bin contents, deletes, emptying | ⬜ |
 | Downloads folder watcher | ⬜ |
@@ -112,7 +113,7 @@ In order. Each step leaves the app in a runnable state.
 | Behaviour | State |
 |---|---|
 | Walk on ledges: taskbar, window tops | ✅ |
-| Ledges on tab strips and toolbars | ⬜ needs UI element positions |
+| Ledges on tab strips, toolbars and panes inside windows | 🟡 dropping him there works; walking and jumping onto them uses the same ledges, unwatched |
 | Jump with crouch and wiggle, occasional misjudged ledge grab | ✅ |
 | Climb screen edges and window sides | ✅ |
 | Climb the scrollbar | ⬜ |

@@ -5,6 +5,7 @@ import { Journal } from "./brain/journal";
 import { Mind } from "./brain/mind";
 import { loadConfig, saveConfig } from "./config";
 import { connectSenses, holdInteractive, setHitRegions } from "./sense/bridge";
+import { Surveyor } from "./sense/skeleton";
 import { Stage } from "./stage/stage";
 import { createVoice } from "./voice/create";
 
@@ -30,6 +31,15 @@ const mind = new Mind({ config, journal, director, actor, voice, paper, now });
 const decider = new Decider({ config, world, journal, director, actor, mind, now });
 
 actor.on("cue", (name) => voice.cue(name));
+
+// Learns the shelves inside windows only when he might use them: when picked up, carried, landing or choosing where to go.
+const surveyor = new Surveyor(world);
+actor.on("grabbed", () => surveyor.wantAt(world.cursor.x, world.cursor.y));
+actor.on("landed", () => surveyor.wantAt(actor.x, actor.y + 4));
+director.onScout = (monitor) => surveyor.wantAround(monitor);
+setInterval(() => {
+  if (actor.mode === "held") surveyor.wantAt(actor.x, actor.y);
+}, 250);
 director.onPerform = (name) => {
   // What the model asked for is journalled by the mind; this records what he does on his own.
   if (!mind.busy && name !== "glance" && name !== "emote") journal.add("pesto", `did: ${name}`);

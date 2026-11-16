@@ -3,6 +3,7 @@ pub mod cursor;
 pub mod focus;
 pub mod media;
 pub mod monitors;
+pub mod skeleton;
 pub mod system;
 pub mod types;
 pub mod windows;

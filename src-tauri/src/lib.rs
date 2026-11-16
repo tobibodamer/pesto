@@ -75,6 +75,7 @@ pub fn run() {
             config::config_patch,
             config::config_open,
             sense_snapshot,
+            sense::skeleton::window_skeleton,
             overlay_set_hit_regions,
             overlay_hold_interactive,
             app_quit,

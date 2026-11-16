@@ -323,6 +323,7 @@ export class Director {
     const w = this.world;
     const mon = w.monitorAt(w.cursor.x, w.cursor.y) ?? w.primary;
     if (!mon) return null;
+    this.onScout?.(mon.id);
     const here = this.actor.ledgeId;
     const options = w.ledges.filter(
       (l) => l.x2 > mon.rect.x + 40 && l.x1 < mon.rect.x + mon.rect.w - 40 && l.y >= mon.rect.y && l.y <= mon.rect.y + mon.rect.h,
@@ -356,6 +357,9 @@ export class Director {
     a.look({ kind: "user" }, 3);
     yield* wait(2.4);
   }
+
+  /** Called when he looks for somewhere to go on a monitor, so the app can learn what is inside its windows. */
+  onScout?: (monitor: number) => void;
 
   update(dt: number) {
     const a = this.actor;

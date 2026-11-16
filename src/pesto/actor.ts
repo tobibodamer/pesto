@@ -106,6 +106,8 @@ export class Actor {
 
   private rideHwnd: number | null = null;
   private rideOffset = 0;
+  /** How far below the top of the window he rides on he stands: 0 on its top edge, more on a shelf inside it. */
+  private rideDrop = 0;
   private rideVx = 0;
   private walkPhase = 0;
   private climb: Climb | null = null;
@@ -264,6 +266,7 @@ export class Actor {
     this.rideHwnd = ledge.hwnd;
     const w = this.world.window(ledge.hwnd);
     this.rideOffset = w ? this.x - w.rect.x : 0;
+    this.rideDrop = w ? this.y - w.rect.y : 0;
   }
 
   /** Launches him into the air with a velocity in pixels per second. */
@@ -550,8 +553,9 @@ export class Actor {
 
     // Ride the window he stands on.
     if (rideWin && this.rideHwnd != null) {
-      const moved = this.world.ledgeOfWindow(this.rideHwnd, rideWin.rect.x + this.rideOffset);
-      if (moved && rideWin.rect.x + this.rideOffset >= moved.x1 - 30 && rideWin.rect.x + this.rideOffset <= moved.x2 + 30) {
+      const moved = this.world.ledgeOfWindow(this.rideHwnd, rideWin.rect.x + this.rideOffset, rideWin.rect.y + this.rideDrop);
+      const shelf = rideWin.rect.y + this.rideDrop;
+      if (moved && Math.abs(moved.y - shelf) < 12 && rideWin.rect.x + this.rideOffset >= moved.x1 - 30 && rideWin.rect.x + this.rideOffset <= moved.x2 + 30) {
         ledge = moved;
         this.ledgeId = moved.id;
         const nx = clamp(rideWin.rect.x + this.rideOffset, moved.x1 + 10, moved.x2 - 10);
