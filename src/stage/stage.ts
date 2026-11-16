@@ -94,7 +94,7 @@ export class Stage {
     const cs = this.can.scale;
     this.litter.scale = cs * 1.25;
     this.canBack = new Sprite(root, Math.ceil(190 * cs) + PAD * 2, Math.ceil(215 * cs) + PAD * 2, 72 * cs + PAD, 203 * cs + PAD, 1);
-    this.pesto = new Sprite(root, Math.ceil(310 * s) + PAD * 2, Math.ceil(300 * s) + PAD * 2, 155 * s + PAD, 240 * s + PAD, 2);
+    this.pesto = this.makePesto();
     this.canFront = new Sprite(root, Math.ceil(110 * cs) + PAD * 2, Math.ceil(110 * cs) + PAD * 2, 55 * cs + PAD, 103 * cs + PAD, 3);
     this.canFront.show(false);
     this.paper = new Paper(root);
@@ -107,6 +107,23 @@ export class Stage {
       if (e.buttons & 1 && !m && this.overCan(e.x, e.y) && !this.overPesto(e.x, e.y)) this.carry = { dx: this.can.x - e.x, dy: this.can.y - e.y };
     });
     this.world.on("mouseUp", () => this.carry && this.setCanDown());
+  }
+
+  /** Pixels per character unit. */
+  get size() {
+    return this.actor.scale;
+  }
+
+  set size(scale: number) {
+    if (!(scale > 0) || scale === this.actor.scale) return;
+    this.actor.scale = scale;
+    this.pesto.remove();
+    this.pesto = this.makePesto();
+  }
+
+  private makePesto() {
+    const s = this.actor.scale;
+    return new Sprite(this.root, Math.ceil(310 * s) + PAD * 2, Math.ceil(300 * s) + PAD * 2, 155 * s + PAD, 240 * s + PAD, 2);
   }
 
   /** White sticker border around Pesto and the can, in character units. 0 removes it. */

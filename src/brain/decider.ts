@@ -91,6 +91,11 @@ export class Decider {
     });
   }
 
+  /** Tries the model again after it kept failing, for when its settings have changed. */
+  retry() {
+    this.failures = 0;
+  }
+
   update(dt: number) {
     const { config, world, mind, actor } = this.deps;
     if (!config.decider.enabled || this.failures >= 5) return;

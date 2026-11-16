@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, RunEvent, State};
+use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
 
 use crate::sense::types::{Rect, SenseSnapshot};
 use crate::sense::{start_sense, SenseHandles, SenseState};
@@ -72,9 +72,13 @@ pub fn run() {
             ask::ask_show,
             ask::ask_hide,
             ask::ask_submit,
+            ask::ask_hotkey,
+            ask::ask_hotkey_get,
             config::config_load,
             config::config_patch,
             config::config_open,
+            config::settings_open,
+            config::settings_hide,
             hear::hear_enable,
             hear::hear_listen,
             hear::hear_stop,
@@ -85,6 +89,15 @@ pub fn run() {
             overlay_hold_interactive,
             app_quit,
         ])
+        .on_window_event(|win, event| {
+            // Closing settings only hides them, so they open instantly next time.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if win.label() == "settings" {
+                    api.prevent_close();
+                    let _ = win.hide();
+                }
+            }
+        })
         .setup(move |app| {
             ask::setup(app.handle())?;
 
@@ -105,7 +118,7 @@ pub fn run() {
                     } else if event.id() == "talk" {
                         ask::toggle(app);
                     } else if event.id() == "settings" {
-                        config::open_in_editor(app);
+                        config::open_settings(app);
                     }
                 })
                 .build(app)?;

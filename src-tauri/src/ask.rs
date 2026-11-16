@@ -1,10 +1,24 @@
 use std::str::FromStr;
+use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// Tried in order after the configured one, until one is free.
 const HOTKEYS: [&str; 3] = ["ctrl+alt+p", "alt+shift+p", "ctrl+alt+shift+p"];
+
+/// The talk hotkey: what is registered right now, and the keys to go back to.
+#[derive(Default)]
+pub struct Hotkey {
+    bound: Option<Shortcut>,
+    keys: String,
+}
+
+fn bind(app: &AppHandle, keys: &str) -> Result<Shortcut, String> {
+    let shortcut = Shortcut::from_str(keys).map_err(|e| e.to_string())?;
+    app.global_shortcut().register(shortcut).map_err(|e| e.to_string())?;
+    Ok(shortcut)
+}
 
 /// The little text box for typing to Pesto. The overlay never takes focus,
 /// so typing happens in this separate window, which the overlay places next
@@ -25,19 +39,50 @@ pub fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|v| v.as_str())
             .map(str::to_owned)
     });
+    let mut hotkey = Hotkey::default();
     for keys in configured.iter().map(String::as_str).chain(HOTKEYS) {
-        let registered = Shortcut::from_str(keys)
-            .map_err(|e| e.to_string())
-            .and_then(|s| app.global_shortcut().register(s).map_err(|e| e.to_string()));
-        match registered {
-            Ok(()) => {
+        match bind(app, keys) {
+            Ok(shortcut) => {
                 println!("[ask] hotkey: {keys}");
+                hotkey = Hotkey { bound: Some(shortcut), keys: keys.to_owned() };
                 break;
             }
             Err(e) => eprintln!("[ask] hotkey {keys:?} unavailable: {e}"),
         }
     }
+    app.manage(Mutex::new(hotkey));
     Ok(())
+}
+
+#[tauri::command]
+pub fn ask_hotkey_get(hotkey: State<'_, Mutex<Hotkey>>) -> String {
+    hotkey.lock().map(|h| h.keys.clone()).unwrap_or_default()
+}
+
+/// Makes `keys` the talk hotkey and saves it. Without keys it is released, so
+/// it can be pressed while a new one is being chosen; the next call binds again.
+/// When `keys` cannot be had, the previous hotkey comes back.
+#[tauri::command]
+pub fn ask_hotkey(app: AppHandle, hotkey: State<'_, Mutex<Hotkey>>, keys: Option<String>) -> Result<(), String> {
+    let mut hotkey = hotkey.lock().map_err(|e| e.to_string())?;
+    if let Some(old) = hotkey.bound.take() {
+        let _ = app.global_shortcut().unregister(old);
+    }
+    let Some(keys) = keys else { return Ok(()) };
+    match bind(&app, &keys) {
+        Ok(shortcut) => {
+            hotkey.bound = Some(shortcut);
+            if keys != hotkey.keys {
+                hotkey.keys = keys.clone();
+                crate::config::patch(&app, serde_json::json!({ "ask": { "hotkey": keys } }))?;
+            }
+            Ok(())
+        }
+        Err(e) => {
+            hotkey.bound = bind(&app, &hotkey.keys).ok();
+            Err(e)
+        }
+    }
 }
 
 pub fn toggle(app: &AppHandle) {

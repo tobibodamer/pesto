@@ -95,6 +95,10 @@ export class ElevenVoice implements Voice {
     });
   }
 
+  close() {
+    void this.ctx.close();
+  }
+
   place(where: Vec, muffled: boolean) {
     if (!this.space) return;
     const volume = Math.max(0, Math.min(1, this.config.voice.volume));

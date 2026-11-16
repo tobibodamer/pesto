@@ -322,9 +322,9 @@ When a video or game takes the whole screen he is no longer on the desktop in fr
 | Privacy filter for window titles before they reach the model | ⬜ |
 | Tests for the script parser and the performance player | ⬜ |
 | `CLAUDE.md` for agents working in the repo | ⬜ |
-| Right-click menu on him or the can: Talk, Go home / Come out, Voice, Volume, Width, Captions, Reactions, Sticker border, Edit settings, Quit. Switches are saved to config.json | ✅ |
+| Right-click menu on him or the can: Talk, Go home / Come out, Voice, Volume, Width, Captions, Reactions, Sticker border, Settings, Quit. Switches are saved to config.json | ✅ |
 | More switches in the menu as features arrive (sounds, proactivity level, do not disturb) | ⬜ |
-| Settings window instead of editing JSON | ⬜ |
+| Settings window (`settings.html`, `src/settings.ts`): every config.json key plus the talk hotkey, saved as you go and applied live in the overlay; opened from the tray or his menu | ✅ |
 | Start with Windows | ⬜ |
 | Installer build | ⬜ |
 

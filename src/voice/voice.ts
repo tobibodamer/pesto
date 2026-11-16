@@ -31,6 +31,8 @@ export interface Voice {
   place(where: Vec, muffled: boolean): void;
   /** Whether lines are audible. When false, callers should show captions. */
   readonly audible: boolean;
+  /** Lets go of the audio device. */
+  close?(): void;
 }
 
 const WORDS_PER_SECOND = 3.1;

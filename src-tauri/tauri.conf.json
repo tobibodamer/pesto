@@ -40,6 +40,18 @@
         "visible": false,
         "width": 380,
         "height": 76
+      },
+      {
+        "label": "settings",
+        "title": "Pesto settings",
+        "url": "settings.html",
+        "theme": "Light",
+        "center": true,
+        "visible": false,
+        "width": 840,
+        "height": 640,
+        "minWidth": 600,
+        "minHeight": 440
       }
     ],
     "security": {

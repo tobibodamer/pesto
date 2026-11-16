@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// Written on first run so there is something to edit. The frontend fills in
 /// every key that is missing, so this only needs the ones people change.
@@ -58,13 +58,21 @@ fn merge(into: &mut serde_json::Value, patch: serde_json::Value) {
     }
 }
 
-/// Merges `patch` into config.json, leaving every other key as it was.
+/// Merges `patch` into config.json, leaving every other key as it was, and
+/// tells every window what changed.
+pub fn patch(app: &AppHandle, patch: serde_json::Value) -> Result<(), String> {
+    let mut config = read(app)?;
+    merge(&mut config, patch.clone());
+    let text = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    fs::write(config_path(app)?, text + "
+").map_err(|e| e.to_string())?;
+    let _ = app.emit("config://changed", patch);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn config_patch(app: AppHandle, patch: serde_json::Value) -> Result<(), String> {
-    let mut config = read(&app)?;
-    merge(&mut config, patch);
-    let text = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    fs::write(config_path(&app)?, text + "\n").map_err(|e| e.to_string())
+    self::patch(&app, patch)
 }
 
 #[tauri::command]
@@ -80,5 +88,27 @@ pub fn open_in_editor(app: &AppHandle) {
             }
         }
         Err(e) => eprintln!("config: {e}"),
+    }
+}
+
+#[tauri::command]
+pub fn settings_open(app: AppHandle) {
+    open_settings(&app);
+}
+
+/// Shows the settings window, or brings it forward if it is already open.
+pub fn open_settings(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("settings") {
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+        let _ = win.emit("settings://shown", ());
+    }
+}
+
+#[tauri::command]
+pub fn settings_hide(app: AppHandle) {
+    if let Some(win) = app.get_webview_window("settings") {
+        let _ = win.hide();
     }
 }

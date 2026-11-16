@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Pesto settings</title>
+    <style>
+      :root {
+        --ink: #2c2321;
+        --paper: #fffdf8;
+        --page: #f7f1e4;
+        --rule: #e6dcc8;
+        --hover: #f1e7d2;
+        --soft: #8a7d72;
+        --faint: #b3a79c;
+        --bad: #b3261e;
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        display: flex;
+        font:
+          500 14px/1.35 "Segoe UI",
+          system-ui,
+          sans-serif;
+        color: var(--ink);
+        background: var(--page);
+        user-select: none;
+        cursor: default;
+      }
+      nav {
+        flex: none;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        width: 176px;
+        padding: 18px 10px 12px;
+      }
+      nav button {
+        padding: 9px 12px;
+        font: inherit;
+        font-weight: 600;
+        color: inherit;
+        text-align: left;
+        background: none;
+        border: 0;
+        border-radius: 9px;
+        cursor: pointer;
+      }
+      nav button:hover {
+        background: var(--hover);
+      }
+      nav button[aria-selected="true"] {
+        background: var(--paper);
+        box-shadow: inset 0 0 0 2px var(--ink);
+      }
+      nav .file {
+        margin-top: auto;
+        font-weight: 500;
+        color: var(--soft);
+      }
+      main {
+        flex: 1;
+        min-width: 0;
+        overflow-y: auto;
+        padding: 18px 18px 18px 8px;
+      }
+      section {
+        padding: 6px 22px 10px;
+        background: var(--paper);
+        border: 2.6px solid var(--ink);
+        border-radius: 16px;
+      }
+      section[hidden] {
+        display: none;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 0 10px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 700;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: minmax(170px, 44%) 1fr;
+        align-items: center;
+        gap: 16px;
+        min-height: 52px;
+        padding: 8px 0;
+        border-top: 2px solid var(--rule);
+        transition: opacity 0.15s;
+      }
+      .row.idle {
+        opacity: 0.45;
+      }
+      .label label {
+        font-weight: 600;
+      }
+      .hint {
+        margin: 2px 0 0;
+        font-size: 12.5px;
+        line-height: 1.35;
+        color: var(--soft);
+      }
+      .about {
+        margin: -4px 0 12px;
+        color: var(--soft);
+      }
+      .control {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      input[type="text"],
+      input[type="password"],
+      input[type="number"],
+      select {
+        flex: 1;
+        min-width: 0;
+        height: 34px;
+        padding: 0 10px;
+        font: inherit;
+        color: inherit;
+        background: #fff;
+        border: 2px solid var(--rule);
+        border-radius: 9px;
+        outline: 0;
+      }
+      input[type="number"] {
+        flex: 0 0 96px;
+      }
+      input::placeholder {
+        color: var(--faint);
+      }
+      input:focus,
+      select:focus {
+        border-color: var(--ink);
+      }
+      select {
+        cursor: pointer;
+      }
+      input[type="range"] {
+        flex: 1;
+        min-width: 0;
+        accent-color: var(--ink);
+        cursor: pointer;
+      }
+      output,
+      .unit {
+        flex: none;
+        min-width: 44px;
+        font-variant-numeric: tabular-nums;
+        color: var(--soft);
+        text-align: right;
+      }
+      .unit {
+        min-width: 0;
+        text-align: left;
+      }
+      .reveal {
+        flex: none;
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        color: var(--soft);
+        background: none;
+        border: 2px solid var(--rule);
+        border-radius: 9px;
+        cursor: pointer;
+      }
+      .reveal:hover {
+        color: var(--ink);
+        border-color: var(--ink);
+      }
+      .reveal svg {
+        display: block;
+        margin: auto;
+      }
+      .switch {
+        position: relative;
+        flex: none;
+        width: 42px;
+        height: 24px;
+        margin: 0;
+        appearance: none;
+        background: var(--rule);
+        border-radius: 12px;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .switch::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 18px;
+        height: 18px;
+        background: #fff;
+        border-radius: 50%;
+        box-shadow: 0 1px 2px rgba(20, 14, 10, 0.3);
+        transition: translate 0.15s;
+      }
+      .switch:checked {
+        background: var(--ink);
+      }
+      .switch:checked::after {
+        translate: 18px 0;
+      }
+      .switch:focus-visible,
+      .keys:focus-visible,
+      nav button:focus-visible {
+        outline: 2px solid var(--ink);
+        outline-offset: 2px;
+      }
+      .keys {
+        min-width: 150px;
+        height: 34px;
+        padding: 0 14px;
+        font: inherit;
+        font-weight: 600;
+        color: inherit;
+        background: #fff;
+        border: 2px solid var(--rule);
+        border-radius: 9px;
+        cursor: pointer;
+      }
+      .keys:hover {
+        border-color: var(--ink);
+      }
+      .keys.waiting {
+        color: var(--soft);
+        border-color: var(--ink);
+        border-style: dashed;
+      }
+      .error {
+        color: var(--bad);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <nav role="tablist" aria-orientation="vertical"></nav>
+    <main></main>
+    <script type="module" src="/src/settings.ts"></script>
+  </body>
+</html>

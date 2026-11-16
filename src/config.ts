@@ -93,9 +93,15 @@ export async function loadConfig(): Promise<Config> {
   }
 }
 
-type Patch<T> = { [K in keyof T]?: T[K] extends object ? Patch<T[K]> : T[K] };
+export type Patch<T> = { [K in keyof T]?: T[K] extends object ? Patch<T[K]> : T[K] };
+
+/** Folds a patch into `config` in place, so everything holding it sees the change. */
+export function absorb(config: Config, patch: unknown) {
+  const next = merge(config, patch);
+  for (const key of Object.keys(next) as (keyof Config)[]) Object.assign(config[key], next[key]);
+}
 
 /** Writes changed settings back to config.json; keys not mentioned are left alone. */
-export function saveConfig(patch: Patch<Config>) {
-  void invoke("config_patch", { patch }).catch((err) => console.warn("config: not saved", err));
+export function saveConfig(patch: Patch<Config>): Promise<void> {
+  return invoke<void>("config_patch", { patch }).catch((err) => console.warn("config: not saved", err));
 }

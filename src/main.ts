@@ -3,12 +3,12 @@ import { listen } from "@tauri-apps/api/event";
 import { Decider } from "./brain/decider";
 import { Journal } from "./brain/journal";
 import { Mind } from "./brain/mind";
-import { loadConfig, saveConfig } from "./config";
+import { absorb, loadConfig, saveConfig, type Config, type Patch } from "./config";
 import { Ears } from "./hear/ears";
 import { connectSenses, holdInteractive, setHitRegions } from "./sense/bridge";
 import { Surveyor } from "./sense/skeleton";
 import { Stage } from "./stage/stage";
-import { createVoice } from "./voice/create";
+import { ConfiguredVoice } from "./voice/create";
 
 const root = document.getElementById("stage")!;
 const config = await loadConfig();
@@ -26,7 +26,7 @@ window.addEventListener("resize", fit);
 await connectSenses(world);
 
 const now = () => world.time;
-const voice = createVoice(config, world);
+const voice = new ConfiguredVoice(config, world);
 const journal = new Journal(world, actor);
 const mind = new Mind({ config, journal, director, actor, voice, paper, now });
 const decider = new Decider({ config, world, journal, director, actor, mind, now });
@@ -34,6 +34,23 @@ const ears = new Ears({ config, director, actor, journal, mind, decider, paper, 
 await ears.connect();
 
 actor.on("cue", (name) => voice.cue(name));
+
+/** Puts settings into effect, wherever they were changed: here, in the settings window or in config.json through it. */
+function apply(patch: Patch<Config>) {
+  absorb(config, patch);
+  if (patch.hear) ears.enable(config.hear.enabled);
+  if (patch.voice) voice.rebuild();
+  if (patch.decider) decider.retry();
+  if (patch.body) {
+    stage.size = config.body.scale;
+    stage.stickerBorder = config.body.border;
+  }
+}
+function change(patch: Patch<Config>) {
+  apply(patch);
+  void saveConfig(patch);
+}
+await listen<Patch<Config>>("config://changed", (e) => apply(e.payload));
 
 // Learns the shelves inside windows only when he might use them: when picked up, carried, landing or choosing where to go.
 const surveyor = new Surveyor(world);
@@ -69,51 +86,14 @@ window.addEventListener("contextmenu", (e) => {
   stage.menu.open(e.clientX * scale, e.clientY * scale, offset(world.monitorAt(world.cursor.x, world.cursor.y)?.rect, v), [
     { label: "Talk…", action: openAsk },
     { label: out ? "Go home" : "Come out", action: () => void director.perform(out ? "goHome" : "comeOut") },
-    {
-      ...toggle("Voice", !config.voice.muted, (on) => {
-        config.voice.muted = !on;
-        saveConfig({ voice: { muted: !on } });
-      }),
-      divide: true,
-    },
-    {
-      label: "Volume",
-      slide: {
-        value: config.voice.volume,
-        set: (volume) => {
-          config.voice.volume = volume;
-          saveConfig({ voice: { volume } });
-        },
-      },
-    },
-    {
-      label: "Width",
-      slide: {
-        value: config.voice.width,
-        set: (width) => {
-          config.voice.width = width;
-          saveConfig({ voice: { width } });
-        },
-      },
-    },
-    toggle("Ears", config.hear.enabled, (on) => {
-      config.hear.enabled = on;
-      saveConfig({ hear: { enabled: on } });
-      ears.enable(on);
-    }),
-    toggle("Captions", config.voice.captions, (on) => {
-      config.voice.captions = on;
-      saveConfig({ voice: { captions: on } });
-    }),
-    toggle("Reactions", config.decider.enabled, (on) => {
-      config.decider.enabled = on;
-      saveConfig({ decider: { enabled: on } });
-    }),
-    toggle("Sticker border", stage.stickerBorder > 0, (on) => {
-      stage.stickerBorder = config.body.border = on ? 1.5 : 0;
-      saveConfig({ body: { border: config.body.border } });
-    }),
-    { label: "Edit settings…", divide: true, action: () => void invoke("config_open") },
+    { ...toggle("Voice", !config.voice.muted, (on) => change({ voice: { muted: !on } })), divide: true },
+    { label: "Volume", slide: { value: config.voice.volume, set: (volume) => change({ voice: { volume } }) } },
+    { label: "Width", slide: { value: config.voice.width, set: (width) => change({ voice: { width } }) } },
+    toggle("Ears", config.hear.enabled, (on) => change({ hear: { enabled: on } })),
+    toggle("Captions", config.voice.captions, (on) => change({ voice: { captions: on } })),
+    toggle("Reactions", config.decider.enabled, (on) => change({ decider: { enabled: on } })),
+    toggle("Sticker border", config.body.border > 0, (on) => change({ body: { border: on ? 1.5 : 0 } })),
+    { label: "Settings…", divide: true, action: () => void invoke("settings_open") },
     { label: "Quit", action: () => void invoke("app_quit") },
   ]);
 });
