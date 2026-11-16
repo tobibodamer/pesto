@@ -164,6 +164,6 @@ export interface SenseCommands {
   overlay_set_hit_regions(args: { regions: Rect[] }): void;
   overlay_hold_interactive(args: { hold: boolean }): void;
   /** The big structural parts of a window (toolbars, tab strips, panes), from a scan bounded to about 150 ms. */
-  window_skeleton(args: { hwnd: number }): Rect[];
+  window_skeleton(args: { hwnd: number }): (Rect & { kind: string })[];
   app_quit(): void;
 }

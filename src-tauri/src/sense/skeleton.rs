@@ -12,7 +12,17 @@ use windows::Win32::UI::Accessibility::{
     UIA_IsOffscreenPropertyId,
 };
 
+use serde::Serialize;
+
+use super::focus::control_kind;
 use super::types::Rect;
+
+#[derive(Serialize)]
+pub struct Part {
+    #[serde(flatten)]
+    pub rect: Rect,
+    pub kind: &'static str,
+}
 
 /// Keeps a scan cheap on huge trees (browsers, Electron): it stops at whichever limit comes first.
 const MAX_DEPTH: usize = 8;
@@ -79,7 +89,7 @@ fn rect_of(e: &IUIAutomationElement) -> Option<Rect> {
     Some(Rect { x: r.left, y: r.top, w: r.right - r.left, h: r.bottom - r.top })
 }
 
-fn scan(uia: &Uia, hwnd: i64) -> windows::core::Result<Vec<Rect>> {
+fn scan(uia: &Uia, hwnd: i64) -> windows::core::Result<Vec<Part>> {
     let started = Instant::now();
     let root = unsafe { uia.automation.ElementFromHandleBuildCache(HWND(hwnd as isize as *mut _), &uia.cache) }?;
     let mut parts = Vec::new();
@@ -102,7 +112,7 @@ fn scan(uia: &Uia, hwnd: i64) -> windows::core::Result<Vec<Rect>> {
                 // Wrappers the size of their parent (common in Chromium and Electron) say nothing and cost no depth.
                 let wrapper = Some(r) == parent_rect;
                 if structural(kind) && !wrapper {
-                    parts.push(r);
+                    parts.push(Part { rect: r, kind: control_kind(kind) });
                 }
                 if container(kind) {
                     queue.push_back((e.clone(), Some(r), if wrapper { depth } else { depth + 1 }));
@@ -117,7 +127,7 @@ fn scan(uia: &Uia, hwnd: i64) -> windows::core::Result<Vec<Rect>> {
 /// The big structural parts of one window (toolbars, tab strips, panes, documents) in screen pixels.
 /// Bounded in depth, node count and time, so it is safe to call whenever he needs to know.
 #[tauri::command]
-pub async fn window_skeleton(hwnd: i64) -> Result<Vec<Rect>, String> {
+pub async fn window_skeleton(hwnd: i64) -> Result<Vec<Part>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         UIA.with(|cell| {
             let mut slot = cell.borrow_mut();

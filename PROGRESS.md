@@ -119,7 +119,7 @@ In order. Each step leaves the app in a runnable state.
 | Climb the scrollbar | ⬜ |
 | Go where the action is: climb or jump up to the focused element, inspect it up close, sometimes hang out on top of that window | ⬜ idea from Tobias; the focused-element sense exists |
 | Cling to glass, strain, slide down with a squeak | ✅ no sound |
-| Catch an edge when dropped just under it or sliding past it: hang with legs kicking, then pull up or let go | 🟡 `hangFrom` in `moves.ts`, triggered by the director. The pose reuses the misjudged-jump catch, paws at chin height; for the design session: arms up over the head |
+| Catch an edge when dropped just under it or sliding past it: hang by one arm raised beside his head, looking up at it, then pull up or let go | 🟡 `hangFrom` in `moves.ts`, triggered by the director. The arm is short, so the hand sits at ear height; a longer reach would read better |
 | Hang by one hand from a tab strip to point below | ⬜ |
 | Ride a dragged window, flap when fast, hang a beat when minimised | ✅ headless, 🟡 live |
 

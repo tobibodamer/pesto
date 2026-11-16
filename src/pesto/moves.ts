@@ -1024,31 +1024,36 @@ function drawSign(ctx: CanvasRenderingContext2D, x: number, y: number, text: str
   ctx.restore();
 }
 
-/** How far above his feet his hands are while he hangs from an edge, in character units. */
-const HANG_REACH = 84;
+/** Where his hand is while he hangs from an edge by one arm, up and out to the side, in character units. */
+// Further up or in and the short arm crosses his face.
+const HANG_HAND = { x: 60, y: -78 };
 
 /**
- * An edge he could catch with his hands from where he is: one spanning his
- * position, from `above` over his hands to `below` under them.
+ * An edge he could catch with a hand from where he is: one spanning his
+ * position, from `above` over his raised hand to `below` under it.
  */
 export function edgeToHang(a: Actor, above = 70, below = 40): Ledge | null {
-  const hands = a.y - HANG_REACH * a.scale;
+  const hand = a.y + HANG_HAND.y * a.scale;
   let best: Ledge | null = null;
   for (const l of a.world.ledges) {
     if (a.x < l.x1 + 12 || a.x > l.x2 - 12) continue;
-    const d = l.y - hands;
+    const d = l.y - hand;
     if (d < -above * a.scale || d > below * a.scale) continue;
-    if (!best || Math.abs(d) < Math.abs(best.y - hands)) best = l;
+    if (!best || Math.abs(d) < Math.abs(best.y - hand)) best = l;
   }
   return best;
 }
 
-/** Catches an edge with both hands and hangs there, legs kicking, then pulls himself up or lets go. */
+/** Catches an edge with one hand and hangs there, looking up at it, then pulls himself up or lets go. */
 export function* hangFrom(a: Actor, ledge: Ledge): Routine {
   const s = a.scale;
-  const x = clamp(a.x, ledge.x1 + 14, ledge.x2 - 14);
+  // Reach toward the side with more edge to hold on to.
+  const side = ledge.x2 - a.x > a.x - ledge.x1 ? 1 : -1;
+  const grabX = clamp(a.x + side * HANG_HAND.x * s, ledge.x1 + 10, ledge.x2 - 10);
+  const fromX = a.x;
   const fromY = a.y;
-  const hangY = ledge.y + HANG_REACH * s;
+  const x = grabX - side * HANG_HAND.x * s;
+  const hangY = ledge.y - HANG_HAND.y * s;
   a.stick(9);
   a.gripLocked = true;
   a.feel("surprised", 0.6);
@@ -1056,23 +1061,36 @@ export function* hangFrom(a: Actor, ledge: Ledge): Routine {
   let k = 0;
   a.gesture = (p, dt) => {
     k += dt;
+    const sway = Math.sin(k * (relaxed ? 1.6 : 2.6));
     const kick = relaxed ? Math.sin(k * 3) * 3 : Math.sin(k * 13) * 6;
-    p.handLX = -17;
-    p.handLY = -88;
-    p.handRX = 17;
-    p.handRY = -88;
+    if (side > 0) {
+      p.handRX = HANG_HAND.x;
+      p.handRY = HANG_HAND.y;
+      p.handLX = -20;
+      p.handLY = -32 + sway * 2;
+    } else {
+      p.handLX = -HANG_HAND.x;
+      p.handLY = HANG_HAND.y;
+      p.handRX = 20;
+      p.handRY = -32 + sway * 2;
+    }
+    p.lean = side * (0.03 + sway * 0.03);
+    p.yaw = side * 0.45;
+    p.tilt = side * 0.1;
+    p.pitch = -0.35;
     p.footLX = -10 + kick;
     p.footRX = 10 - kick;
     p.footLY = 5;
     p.footRY = 5;
-    p.squash = -0.1;
+    p.squash = -0.08;
   };
   yield* tween(0.14, (u) => {
-    a.x = lerp(a.x, x, u);
+    a.x = lerp(fromX, x, easeOut(u));
     a.y = lerp(fromY, hangY, easeOut(u));
   });
   const gone = () => a.world.ledge(ledge.id) == null;
   const hang = relaxed ? rand(4, 8) : rand(1.2, 3.5);
+  a.lookAt(grabX, ledge.y, hang * 0.5);
   yield* until(gone, hang * 0.5);
   if (!gone() && chance(0.6)) a.look({ kind: "user" }, 1.2);
   yield* until(gone, hang * 0.5);
@@ -1080,7 +1098,10 @@ export function* hangFrom(a: Actor, ledge: Ledge): Routine {
   const edge = a.world.ledge(ledge.id);
   if (edge && chance(relaxed ? 0.5 : 0.75)) {
     a.feel("strained", 0.8);
-    yield* tween(0.45, (u) => (a.y = lerp(hangY, edge.y, easeInOut(u))));
+    yield* tween(0.45, (u) => {
+      a.y = lerp(hangY, edge.y, easeInOut(u));
+      a.x = lerp(x, grabX, easeInOut(u));
+    });
     a.gesture = null;
     a.place(edge, a.x);
     yield* wait(0.25);

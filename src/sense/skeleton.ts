@@ -1,5 +1,24 @@
 import type { World } from "../world/world";
 import { call } from "./bridge";
+import type { Rect } from "./types";
+
+/** Bars drawn as bars in nearly every app: both their top and bottom lines are visible. */
+const BARS = new Set(["toolbar", "tabs", "menu", "statusbar", "header"]);
+/** Boxes with a visible frame, at least along the top. */
+const BOXES = new Set(["edit", "document"]);
+
+/**
+ * The visible lines among a window's parts, as zero-height rects. Panes,
+ * groups and custom blocks are left out: in web and Electron apps they are
+ * layout boxes with no border, and standing on them looks like standing on air.
+ */
+export function visibleLines(parts: (Rect & { kind: string })[]): Rect[] {
+  return parts.flatMap((p) => {
+    if (BARS.has(p.kind)) return [{ ...p, h: 0 }, { ...p, y: p.y + p.h, h: 0 }];
+    if (BOXES.has(p.kind)) return [{ ...p, h: 0 }];
+    return [];
+  });
+}
 
 /**
  * Learns the inside of windows on demand: one bounded UI Automation scan per
@@ -20,7 +39,8 @@ export class Surveyor {
     this.inFlight.add(hwnd);
     call("window_skeleton", { hwnd })
       .then((parts) => {
-        if (parts.length) w.setSkeleton(hwnd, parts);
+        const lines = visibleLines(parts);
+        if (lines.length) w.setSkeleton(hwnd, lines);
         else this.emptyAt.set(hwnd, w.time);
       })
       .catch(() => this.emptyAt.set(hwnd, w.time))

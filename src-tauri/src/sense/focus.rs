@@ -24,7 +24,7 @@ use super::{emit_event, SenseState};
 const POLL: Duration = Duration::from_millis(150);
 const NAME_LIMIT: usize = 60;
 
-fn control_kind(id: i32) -> &'static str {
+pub fn control_kind(id: i32) -> &'static str {
     match id {
         50000 => "button",
         50002 => "checkbox",
@@ -39,12 +39,14 @@ fn control_kind(id: i32) -> &'static str {
         50013 => "radio",
         50014 => "scrollbar",
         50015 => "slider",
+        50017 => "statusbar",
         50018 => "tabs",
         50019 => "tab",
         50020 => "text",
         50021 => "toolbar",
         50023 => "tree",
         50024 => "treeitem",
+        50025 => "custom",
         50026 => "group",
         50028 | 50036 => "table",
         50029 => "row",
@@ -52,6 +54,7 @@ fn control_kind(id: i32) -> &'static str {
         50031 => "button",
         50032 => "window",
         50033 => "pane",
+        50034 => "header",
         50037 => "titlebar",
         _ => "other",
     }
