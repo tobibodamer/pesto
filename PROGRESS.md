@@ -15,7 +15,7 @@ In order. Each step leaves the app in a runnable state.
 3. ✅ **Keys.** Entrim (GLM 5.3 Flash) and ElevenLabs are in `%APPDATA%\dev.pesto.app\config.json`.
 4. ✅ **Talk to him by text.** `node dev/poke.mjs "pesto.say('…')"` gives a streamed, acted-out, spoken answer.
 5. ✅ **Decider live.** About 250 ms per decision on Triton.
-6. 🟡 **Voice.** ElevenLabs v4 Turbo through the binaural renderer works. His voice is Scruffy Duck. First listen: startlingly real but too roomy and too wide, and too studio-clean and big. Now: early bounces come from right around him instead of the room's walls, heard angles are 0.62 of the seen ones, and a small-body filter takes out the chest and the air. Open: Tobias judges round three (`dev/out/audition/v3-*.wav`, made with `node dev/audition.mjs`); then the can colour and the generated sounds.
+6. 🟡 **Voice.** ElevenLabs v4 Turbo through the binaural renderer works. His voice is Scruffy Duck. First listen: startlingly real but too roomy and too wide, and too studio-clean and big. Now: early bounces come from right around him, the Width setting (default 0.3) scales the heard angles, the main screen is narrowed to 0.4 of that and the other monitors open up twice as fast past its edges, and a small-body filter takes out the chest and the air. Open: Tobias judges `dev/out/audition/narrow2-*.wav` (made with `node dev/audition.mjs`); then the can colour and the generated sounds.
 7. 🟡 **A way to talk to him without devtools.** Ctrl+Alt+P (or the tray's Talk…) opens a text box above his head; Enter sends, Esc closes. Set `ask.hotkey` in config.json to change it. Next: microphone and wake word.
 8. ⬜ Then the feature tables below, roughly top to bottom.
 
@@ -72,6 +72,8 @@ In order. Each step leaves the app in a runnable state.
 | In a call / screen sharing detection | ⬜ |
 | ActivityWatch adapter, Discord activity | ⬜ |
 | Screen vision: screenshots to the model on demand | ⬜ |
+| Focused element in any window (UI Automation): kind, name, rect | 🟡 prototype |
+| Elements that change, move or matter most in a window | ⬜ |
 | UI element positions (buttons, scrollbar, tab strip, close button) for pointing and clicking | ⬜ |
 | Recycle bin contents, deletes, emptying | ⬜ |
 | Downloads folder watcher | ⬜ |
@@ -114,6 +116,7 @@ In order. Each step leaves the app in a runnable state.
 | Jump with crouch and wiggle, occasional misjudged ledge grab | ✅ |
 | Climb screen edges and window sides | ✅ |
 | Climb the scrollbar | ⬜ |
+| Go where the action is: climb or jump up to the focused element, inspect it up close, sometimes hang out on top of that window | ⬜ idea from Tobias; the focused-element sense exists |
 | Cling to glass, strain, slide down with a squeak | ✅ no sound |
 | Hang by one hand from a tab strip to point below | ⬜ |
 | Ride a dragged window, flap when fast, hang a beat when minimised | ✅ headless, 🟡 live |
@@ -214,6 +217,8 @@ In order. Each step leaves the app in a runnable state.
 |---|---|
 | Peeking from the can | ✅ |
 | Walks: stretch, sniff, sit with legs dangling | ✅ |
+| Lounging: lies down or slouches instead of sitting upright when he is really relaxed outside the can | ⬜ idea from Tobias |
+| Leaning on the rim of the half-open can, hanging over the edge and looking out | ⬜ idea from Tobias |
 | Grooming his tail | ⬜ |
 | Can sounds | ⬜ |
 | Junk tossed out of the can | ⬜ |
@@ -255,6 +260,17 @@ In order. Each step leaves the app in a runnable state.
 | Sudden bang: poof | 🟡 startle exists, no trigger |
 | Silent during calls, yapping hand | ⬜ |
 
+### Fullscreen
+
+When a video or game takes the whole screen he is no longer on the desktop in front of it. Ideas from Tobias:
+
+| Behaviour | State |
+|---|---|
+| Behind the fullscreen app instead of over it | ⬜ |
+| Pokes a hole in it and looks through | ⬜ |
+| Bulges and dents the picture from behind as he moves | ⬜ |
+| Knocks from behind: a thump and a few specks of dust | ⬜ |
+
 ### Time and system
 
 | Behaviour | State |
@@ -293,12 +309,11 @@ In order. Each step leaves the app in a runnable state.
 | Privacy filter for window titles before they reach the model | ⬜ |
 | Tests for the script parser and the performance player | ⬜ |
 | `CLAUDE.md` for agents working in the repo | ⬜ |
-| Right-click menu on him or the can: Talk, Go home / Come out, Voice, Captions, Reactions, Sticker border, Edit settings, Quit. Switches are saved to config.json | ✅ |
+| Right-click menu on him or the can: Talk, Go home / Come out, Voice, Volume, Width, Captions, Reactions, Sticker border, Edit settings, Quit. Switches are saved to config.json | ✅ |
 | More switches in the menu as features arrive (sounds, proactivity level, do not disturb) | ⬜ |
 | Settings window instead of editing JSON | ⬜ |
 | Start with Windows | ⬜ |
 | Installer build | ⬜ |
-| First commit | ⬜ waiting for the word |
 
 ## Running it
 

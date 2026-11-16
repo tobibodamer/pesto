@@ -187,8 +187,10 @@ function canRing(ctx: BaseAudioContext): AudioBuffer {
   return buf;
 }
 
-/** How much of the heard angle survives on the main screen; past its edges the full `width` slope takes over. */
+/** How much of the heard angle survives on the main screen. */
 const MAIN_SCREEN_KEEP = 0.4;
+/** How fast it grows past the main screen's edges, so the other monitors stay clearly apart from it. */
+const BEYOND_SLOPE = 2;
 
 /**
  * Where a point on the screens is, as heard from the chair. Pixels in, degrees and metres out.
@@ -205,7 +207,7 @@ export function seenFromChair(point: { x: number; y: number }, primary: { x: num
   const deg = (rad: number) => (rad * 180) / Math.PI;
   const edge = deg(Math.atan2(screen.w * 0.5 * metresPerPixel, away));
   const az = deg(Math.atan2(dx, away));
-  const heard = Math.abs(az) <= edge ? az * MAIN_SCREEN_KEEP : Math.sign(az) * (edge * MAIN_SCREEN_KEEP + Math.abs(az) - edge);
+  const heard = Math.abs(az) <= edge ? az * MAIN_SCREEN_KEEP : Math.sign(az) * (edge * MAIN_SCREEN_KEEP + (Math.abs(az) - edge) * BEYOND_SLOPE);
   return {
     azimuth: heard * width,
     elevation: deg(Math.atan2(dy, Math.hypot(dx, away))) * width,
