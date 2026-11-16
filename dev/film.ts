@@ -315,6 +315,30 @@ const SCENARIOS: Record<string, Scenario> = {
       }
     },
   },
+  // In a hurry: out of the can and up to a spot at the top of the browser, then over to one in the middle of the notes.
+  dash: {
+    zoom: 3,
+    frames: Array.from({ length: 28 }, (_, i) => 1.1 + i * 0.095),
+    script: (s, t, first) => {
+      if (first) {
+        s.director.autonomous = false;
+        s.director.onTouch = (at) => marks.push({ ...at, t: s.world.time });
+        void s.director.perform("tap", { target: { window: 2, at: { x: 210, y: 30 } } });
+      }
+    },
+  },
+  // In a hurry along the floor in bounds, then up the glass to a spot in the middle of the notes, where there is nothing to stand on.
+  bound: {
+    zoom: 2.2,
+    frames: Array.from({ length: 32 }, (_, i) => 1.1 + i * 0.11),
+    script: (s, t, first) => {
+      if (first) {
+        s.director.autonomous = false;
+        s.director.onTouch = (at) => marks.push({ ...at, t: s.world.time });
+        void s.director.perform("tap", { target: { window: 1, at: { x: 240, y: 150 } } });
+      }
+    },
+  },
   idle: {
     frames: [2, 6, 10, 14, 18, 24, 30, 38, 46, 54, 62, 70],
     script: (s, t, first) => {

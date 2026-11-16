@@ -1,5 +1,6 @@
 import { CAN, LID_PEEK, type Can } from "../can/can";
 import type { Actor } from "../pesto/actor";
+import { dash } from "../pesto/dash";
 import { chance, clamp, pick, rand, sign } from "../pesto/math";
 import { listening, type Hearing, type ListenMove, type ListenPose } from "../pesto/listening";
 import * as moves from "../pesto/moves";
@@ -27,6 +28,9 @@ interface Reaction {
   /** An instant change to his face or eyes that leaves whatever he is doing running. */
   now?: (d: Director, args: ReactionArgs) => void;
 }
+
+/** The things he mutters in the can, so that it is not the same one every time. */
+const MUTTERS = ["mutter", "mutter2", "mutter3"];
 
 /**
  * Everything Pesto can be told to do without speaking. The idle scheduler,
@@ -72,7 +76,7 @@ export const REACTIONS = {
     describe: "Mutter to himself inside the can, too muffled to make out.",
     run: function* (d) {
       if (d.actor.mode !== "can") return;
-      d.actor.cue("mutter");
+      d.actor.cue(pick(MUTTERS));
       d.can.shake(0.15);
       yield* wait(1.8);
     },
@@ -267,7 +271,7 @@ const NEEDS_BODY = new Set<ReactionName>([
   "wander", "approach", "sit", "lounge", "groom", "point", "tap", "throw", "knock", "sign", "wave", "shrug", "nod", "ponder", "clap", "flop", "dance", "startle", "swat", "yawn", "sniff",
 ]);
 /** Reactions he can do while clinging to the glass, without coming down first. */
-const FROM_GLASS = new Set<ReactionName>(["point", "tap"]);
+const FROM_GLASS = new Set<ReactionName>(["approach", "point", "tap"]);
 
 /**
  * Decides what Pesto does with himself. On its own it only runs his idle
@@ -499,7 +503,7 @@ export class Director {
     return target;
   }
 
-  /** Gets him as close to a point as the terrain allows: onto the ledge under it. */
+  /** Gets him as close to a point as the terrain allows, and quickly: onto the ledge under it. */
   *goNear(x: number, y: number): Routine {
     const a = this.actor;
     if (a.mode === "can") yield* moves.exitCan(a, { quick: true });
@@ -507,38 +511,33 @@ export class Director {
     if (!ledge) return;
     // Stand beside the thing, not on top of it.
     const side = a.x < x ? -1 : 1;
-    yield* moves.travel(a, ledge.id, clamp(x + side * 60 * a.scale, ledge.x1 + 20, ledge.x2 - 20));
+    yield* dash(a, { ledge: ledge.id, x: clamp(x + side * 60 * a.scale, ledge.x1 + 20, ledge.x2 - 20) });
     a.dir = -side;
   }
 
   /**
-   * Gets a spot within reach of his finger or his straw: onto a ledge beside
-   * it if there is one, otherwise up the glass to it, where he clings.
+   * Gets a spot within reach of his finger or his straw, and quickly: onto a
+   * ledge beside it if there is one, otherwise to the glass by it, where he clings.
    */
   *reach(x: number, y: number): Routine {
     const a = this.actor;
     const s = a.scale;
     if (show.within(a, x, y)) return;
-    if (a.mode === "glass") {
-      a.gripLocked = false;
-      a.grip = 0;
-      yield* until(() => a.mode === "ground", 10);
-    }
     const stand = this.standFor(x, y);
     if (stand) {
-      yield* moves.travel(a, stand.ledge.id, stand.x);
+      yield* dash(a, { ledge: stand.ledge.id, x: stand.x });
       a.dir = sign(x - a.x);
       return;
     }
     const floor = this.world.ledgeBelow(x, y) ?? this.world.ledgeBelow(x, -1e9);
     if (!floor) return;
-    // Up the side of it he is coming from, so he does not climb across what he is about to show.
+    // On the side of it he is coming from, so he does not cross what he is about to show.
     const side = a.x < x ? -1 : 1;
     const v = this.world.virtual;
     const cx = clamp(x + side * 64 * s, v.x + 50 * s, v.x + v.w - 50 * s);
-    yield* moves.travel(a, floor.id, clamp(cx, floor.x1 + 20, floor.x2 - 20));
     const cy = y + 66 * s;
-    if (cy < floor.y - 20 * s) yield* moves.climbTo(a, cx, cy);
+    if (cy < floor.y - 20 * s) yield* dash(a, { x: cx, y: cy });
+    else yield* dash(a, { ledge: floor.id, x: clamp(cx, floor.x1 + 20, floor.x2 - 20) });
   }
 
   /** Where on a ledge he could stand to touch a spot: the nearest such place to him, or null when no ledge is close enough to it. */

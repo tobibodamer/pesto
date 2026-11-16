@@ -3,7 +3,7 @@ import { CAN } from "../can/can";
 import type { Rect } from "../sense/types";
 import type { Ledge, World } from "../world/world";
 import { Climb } from "./climb";
-import { Spring, approach, chance, clamp, clamp01, noise, rand, sign, type Vec } from "./math";
+import { Spring, approach, chance, clamp, clamp01, noise, pick, rand, sign, type Vec } from "./math";
 import { EMOTIONS, REST, applyPose, clonePose, type Emotion, type Pose } from "./pose";
 import { Puppet } from "./puppet";
 import { Interrupted, type Routine } from "./routine";
@@ -46,7 +46,22 @@ export interface ActorEvents {
 
 export const GRAVITY = 2300;
 const WALK_SPEED = 100;
-const RUN_SPEED = 400;
+export const RUN_SPEED = 400;
+/** How much faster than a run he goes when he is in a hurry. */
+export const SPRINT = 1.35;
+/**
+ * The noises he makes when something takes effort. A breath is a sniff or a
+ * snort, hardly there, and may come often. Winded, after he has been at it a
+ * while, he snuffles. The voiced ones, churrs and trills, are kept for hauling
+ * his whole weight up over an edge. `rest` is how many seconds pass before
+ * the next of the same kind.
+ */
+const EFFORT = {
+  breath: { sounds: ["sniff", "snort", "snort2", "snuffle", "whuff", "whuff2"], rest: 2.5 },
+  winded: { sounds: ["snuffle"], rest: 8 },
+  heave: { sounds: ["churr", "churr2", "trill", "trill2", "whine"], rest: 14 },
+};
+type Effort = keyof typeof EFFORT;
 const SLIDE_SPEED = 330;
 /** Height of the scruff above his feet, in units. */
 const SCRUFF = 100;
@@ -73,6 +88,8 @@ export class Actor {
   walkTarget: number | null = null;
   running = false;
   sitting = false;
+  /** In a hurry: he sprints instead of running and scrambles up the glass instead of climbing it. */
+  hurried = false;
 
   /** Ledge a jump is aimed at; others are passed through. Null lands on anything. */
   landOn: string | null = null;
@@ -111,6 +128,12 @@ export class Actor {
   private rideVx = 0;
   private walkPhase = 0;
   private climb: Climb | null = null;
+  /** How much of the current climb has been heard. */
+  private climbBeats = 0;
+  /** World time before which he makes no further noise of effort, of any kind and of each kind. */
+  private quietUntil = -Infinity;
+  private rested: Partial<Record<Effort, number>> = {};
+  private strainSound = "";
   private airTime = 0;
   /** Feet y where the current fall or jump started. */
   fallFrom = 0;
@@ -158,6 +181,20 @@ export class Actor {
     this.emit("cue", name);
   }
 
+  /**
+   * A noise of effort, some of the time: never over his own talking, never
+   * two close together, and not the same one twice running.
+   */
+  strain(kind: Effort, likelihood = 0.5) {
+    const now = this.world.time;
+    if (this.talking || now < this.quietUntil || now < (this.rested[kind] ?? -Infinity) || !chance(likelihood)) return;
+    const { sounds, rest } = EFFORT[kind];
+    this.quietUntil = now + 1.5;
+    this.rested[kind] = now + rest * rand(0.8, 1.4);
+    this.strainSound = pick(sounds.length > 1 ? sounds.filter((s) => s !== this.strainSound) : sounds);
+    this.cue(this.strainSound);
+  }
+
   // ───────────────────────── routines ─────────────────────────
 
   /** Whether a routine is currently driving him. */
@@ -188,6 +225,7 @@ export class Actor {
     this.routineDone = null;
     this.gesture = null;
     this.gripLocked = false;
+    this.hurried = false;
     this.walkTarget = null;
     this.climbTarget = null;
     done?.(finished);
@@ -602,7 +640,7 @@ export class Actor {
       this.sitting = false;
       const goal = clamp(this.walkTarget, ledge.x1 + 14, ledge.x2 - 14);
       const dx = goal - this.x;
-      const speed = (this.running ? RUN_SPEED : WALK_SPEED) * s;
+      const speed = (this.running ? RUN_SPEED * (this.hurried ? SPRINT : 1) : WALK_SPEED) * s;
       const step = speed * dt;
       if (Math.abs(dx) <= step) {
         this.x = goal;
@@ -783,13 +821,23 @@ export class Actor {
 
     if (this.climbTarget) {
       const now = this.puppet.pose;
-      this.climb ??= new Climb(this.x, this.y, s, [
-        { x: now.handLX, y: now.handLY },
-        { x: now.handRX, y: now.handRY },
-      ]);
+      if (!this.climb) {
+        const hands: [Vec, Vec] = [
+          { x: now.handLX, y: now.handLY },
+          { x: now.handRX, y: now.handRY },
+        ];
+        this.climb = new Climb(this.x, this.y, s, hands, this.hurried);
+        this.climbBeats = 0;
+      }
       const climb = this.climb;
       const bounds = this.world.virtual;
       const arrived = climb.step(dt, this.climbTarget, bounds.x + 40 * s, bounds.x + bounds.w - 40 * s);
+      if (climb.beats !== this.climbBeats) {
+        this.climbBeats = climb.beats;
+        if (climb.doing === "leap") this.strain("breath", 0.25);
+        else if (climb.doing === "rest") this.strain("breath", 0.4);
+        else if (climb.doing === "slip" && !this.talking && chance(0.35)) this.cue("eep");
+      }
       if (dt > 0 && Math.abs(climb.x - this.x) / dt > 40 * s) this.dir = sign(climb.x - this.x);
       this.x = climb.x;
       this.y = climb.y;

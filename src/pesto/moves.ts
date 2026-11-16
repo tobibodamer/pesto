@@ -10,11 +10,13 @@ import { Interrupted, tween, until, wait, type Routine } from "./routine";
  * assumes nothing about why it was called and leaves him in a stable mode.
  */
 
-const EDGE = 18;
+/** How close to the end of a ledge he will stand, in pixels. */
+export const EDGE = 18;
 const JUMP_REACH_X = 430;
 const JUMP_REACH_UP = 250;
 
-function arc(a: Actor, tx: number, ty: number, clearance = 46) {
+/** The launch velocity that carries him from where he is to a point, passing `clearance` units above the higher of the two. */
+export function arc(a: Actor, tx: number, ty: number, clearance = 46) {
   const g = GRAVITY * a.scale;
   const apex = Math.min(a.y, ty) - clearance * a.scale;
   const vy = -Math.sqrt(2 * g * (a.y - apex));
@@ -81,6 +83,7 @@ export function* jumpTo(a: Actor, tx: number, ledge: Ledge, opts: { sure?: boole
     };
     yield* wait(0.55);
     a.feel("strained", 0.7);
+    a.strain("heave", 0.6);
     yield* tween(0.42, (u) => (a.y = lerp(hangY, ledge.y, easeInOut(u))));
     a.gesture = null;
     a.place(ledge, tx);
@@ -89,6 +92,7 @@ export function* jumpTo(a: Actor, tx: number, ledge: Ledge, opts: { sure?: boole
   }
 
   const v = arc(a, tx, ledge.y, up > 0 ? 34 : 46);
+  if (up > 60 * a.scale) a.strain("breath", 0.2);
   a.launch(v.vx, v.vy, ledge.id);
   yield* until(() => a.mode !== "air");
   a.need("ground");
@@ -124,6 +128,7 @@ export function* mount(a: Actor, ledge: Ledge): Routine {
     p.handRY = -30;
     p.squash += 0.1;
   };
+  a.strain("breath", 0.25);
   yield* tween(0.4, (u) => {
     a.y = lerp(from, ledge.y, easeInOut(u));
     a.x = lerp(a.x, x, u);
@@ -1104,6 +1109,7 @@ export function* hangFrom(a: Actor, ledge: Ledge): Routine {
   const edge = a.world.ledge(ledge.id);
   if (edge && chance(relaxed ? 0.5 : 0.75)) {
     a.feel("strained", 0.8);
+    a.strain("heave", 0.5);
     yield* tween(0.45, (u) => {
       a.y = lerp(hangY, edge.y, easeInOut(u));
       a.x = lerp(x, grabX, easeInOut(u));

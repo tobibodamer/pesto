@@ -80,6 +80,25 @@ type Stride =
   | { kind: "leap"; from: Vec; to: Vec; t: number; crouch: number; flight: number; land: number; stage: 0 | 1 | 2 }
   | { kind: "rest"; from: Vec; t: number; seconds: number; slip: number; slipAt: number; stage: 0 | 1 | 2 };
 
+/** Lengths in units, speeds in units per second, each as a shortest and longest or slowest and fastest. */
+interface Pace {
+  pull: [number, number];
+  pullSpeed: [number, number];
+  leap: [number, number];
+  leapSpeed: number;
+  /** He only leaps with at least this far still to go. */
+  leapFrom: number;
+  leapOdds: number;
+  crouch: [number, number];
+  restOdds: number;
+  /** How far he strays from the straight line, 1 being his usual wander. */
+  veer: number;
+}
+
+const STEADY: Pace = { pull: [20, 62], pullSpeed: [210, 380], leap: [95, 150], leapSpeed: 620, leapFrom: 150, leapOdds: 0.26, crouch: [0.16, 0.24], restOdds: 0.16, veer: 1 };
+/** In a hurry: longer, quicker pulls, a leap every other move, and no stopping for breath. */
+const BRISK: Pace = { pull: [42, 76], pullSpeed: [430, 640], leap: [120, 185], leapSpeed: 900, leapFrom: 110, leapOdds: 0.5, crouch: [0.07, 0.11], restOdds: 0, veer: 0.5 };
+
 /**
  * Climbing as he would actually do it: hand over hand in pulls of uneven
  * length and tempo, veering left and right of the straight line, with the
@@ -89,6 +108,9 @@ type Stride =
 export class Climb {
   /** What he is in the middle of, for his face. */
   doing: "pull" | "leap" | "rest" | "slip" = "pull";
+  /** Counts up each time he starts on something new, so that two pulls in a row can be told apart. */
+  beats = 0;
+  private pace: Pace;
   private hands: [Paw, Paw];
   private feet: [Paw, Paw];
   private stride: Stride | null = null;
@@ -106,8 +128,10 @@ export class Climb {
     public y: number,
     private scale: number,
     hands: [Vec, Vec],
+    brisk = false,
   ) {
     const s = scale;
+    this.pace = brisk ? BRISK : STEADY;
     this.hands = [new Paw(-1, x + hands[0].x * s, y + hands[0].y * s), new Paw(1, x + hands[1].x * s, y + hands[1].y * s)];
     this.feet = [new Paw(-1, x - FOOT_HOME.x * s, y + FOOT_HOME.y * s), new Paw(1, x + FOOT_HOME.x * s, y + FOOT_HOME.y * s)];
   }
@@ -166,15 +190,16 @@ export class Climb {
     } else {
       st.t += dt;
       this.squash = 0;
-      this.doing = st.stage === 0 ? "rest" : "slip";
       let drop = 0;
       if (st.slip > 0 && st.stage === 0 && st.t >= st.slipAt) {
         st.stage = 1;
+        this.beats++;
         const body = { x: this.x, y: this.y };
         for (const paw of [...this.hands, ...this.feet]) {
           paw.letGo({ x: (paw.x - body.x) / s, y: (paw.y - body.y) / s }, body, s, 0);
         }
       }
+      this.doing = st.stage === 0 ? "rest" : "slip";
       if (st.stage > 0) {
         const k = clamp01((st.t - st.slipAt) / 0.2);
         drop = st.slip * easeIn(k);
@@ -208,27 +233,29 @@ export class Climb {
     const dx = target.x - this.x;
     const dy = target.y - this.y;
     const d = Math.hypot(dx, dy);
+    const pace = this.pace;
+    this.beats++;
     if (d < 34 * s) {
       this.reachAhead(target, 0.2);
       return { kind: "pull", from, to: { ...target }, t: 0, seconds: 0.16 + d / (s * 260), last: true };
     }
-    if (this.pulls >= 2 && chance(0.16)) {
+    if (this.pulls >= 2 && chance(pace.restOdds)) {
       this.pulls = 0;
       const seconds = rand(0.45, 0.95);
       return { kind: "rest", from, t: 0, seconds, slip: chance(0.35) ? rand(9, 15) * s : 0, slipAt: seconds * 0.3, stage: 0 };
     }
-    const leap = d > 150 * s && this.pulls >= 1 && chance(0.26);
-    const length = leap ? Math.min(d - 30 * s, rand(95, 150) * s) : Math.min(d, rand(20, 62) * s);
+    const leap = d > pace.leapFrom * s && this.pulls >= 1 && chance(pace.leapOdds);
+    const length = leap ? Math.min(d - 30 * s, rand(...pace.leap) * s) : Math.min(d, rand(...pace.pull) * s);
     // He veers off the straight line, less and less as he closes in.
     if (chance(0.75)) this.veer = -this.veer;
-    const angle = Math.atan2(dy, dx) + this.veer * rand(0.12, 0.5) * clamp01(d / (240 * s)) * (leap ? 0.5 : 1);
+    const angle = Math.atan2(dy, dx) + this.veer * pace.veer * rand(0.12, 0.5) * clamp01(d / (240 * s)) * (leap ? 0.5 : 1);
     const to = { x: clamp(this.x + Math.cos(angle) * length, minX, maxX), y: this.y + Math.sin(angle) * length };
     if (leap) {
       this.pulls = 0;
-      return { kind: "leap", from, to, t: 0, crouch: rand(0.16, 0.24), flight: 0.14 + length / (s * 620), land: 0.2, stage: 0 };
+      return { kind: "leap", from, to, t: 0, crouch: rand(...pace.crouch), flight: 0.14 + length / (s * pace.leapSpeed), land: 0.2, stage: 0 };
     }
     this.pulls++;
-    const seconds = 0.13 + length / (s * rand(210, 380));
+    const seconds = 0.13 + length / (s * rand(...pace.pullSpeed));
     this.reachAhead(to, seconds);
     return { kind: "pull", from, to, t: 0, seconds, last: false };
   }

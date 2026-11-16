@@ -8,8 +8,8 @@ export interface TraceLine {
 const KEEP = 200;
 
 /**
- * A running record of what his ears and the decision model are doing, for
- * the debug panel and the devtools console. Costs nothing while off.
+ * A running record of what his ears, the decision model and his legs are
+ * doing, for the debug panel and the devtools console. Costs nothing while off.
  */
 export const trace = {
   on: false,

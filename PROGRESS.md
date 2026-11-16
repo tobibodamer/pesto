@@ -128,6 +128,8 @@ In order. Each step leaves the app in a runnable state.
 | Ledges on tab strips, toolbars and panes inside windows | 🟡 dropping him there works; walking and jumping onto them uses the same ledges, unwatched |
 | Jump with crouch and wiggle, occasional misjudged ledge grab | ✅ |
 | Climb screen edges and window sides | ✅ |
+| In a hurry when he goes to show or stand by something (`tap`, `approach`): a route worked out over the ledges and the bare glass, taken in sprints, bounds along a ledge, running leaps, springs from hold to hold up the glass, an edge caught by the hands and hauled over, and short scrambles. A different route and different holds each time; idle wandering keeps its old amble | 🟡 `src/pesto/dash.ts`. Seen in `film:dash` and `film:bound`, and run headless on 1,200 random desktops at three sizes with windows moving under him: about half the time `travel` takes. Not seen live; the edge catch has not been looked at |
+| Noises of effort while he moves, some of the time and never over his own talking. Mostly a sniff or a snort that is hardly there, on a big jump or a rest on the glass; a double snuffle only after a long dash or a string of moves up the glass; a churr, trill or thin whine only when he hauls his whole weight over an edge, and then not again for a quarter of a minute. Paws slap onto the glass and claws scrabble | 🟡 `strain` and `EFFORT` in `actor.ts`, how loud each plays in `SOUNDS` in `src/voice/eleven.ts`. Every one of these was rated good by Tobias on the rating page (`node dev/rate.mjs`, marks kept in `dev/out/ratings.txt`); not yet heard in the app. Chew, snore and swat were replaced by takes he rated good, and mutter by three gremlin-like mumbles that he picks between; deeper, mumblier takes were tried and none rated good. He wants a small snorky raccoon, never a human or a dog |
 | Climb the scrollbar | ⬜ |
 | Go where the action is: climb or jump up to the focused element, inspect it up close, sometimes hang out on top of that window | ⬜ idea from Tobias; the focused-element sense exists |
 | Cling to glass, strain, slide down with a squeak | ✅ no sound |
@@ -339,11 +341,14 @@ pnpm dev                                   the real overlay (its own Vite on por
 pnpm dev:debug                             the same, with the webview debug port open for poke
 node dev/poke.mjs "pesto.say('hello')"      run anything inside the live overlay
 node dev/sfx.mjs                           generate missing sounds into public/sfx
+node dev/sfx.mjs --takes 3 mutter          three takes of a sound into dev/out/takes, to choose from
+node dev/rate.mjs                          every sound and take on one page, dev/out/rate.html, to play and rate
 pnpm dev:web                               studio page in a browser, no desktop senses
 node dev/shoot.mjs emotions film:emerge    pose sheets and film strips into dev/out
 node dev/shoot.mjs film:groom film:lounge film:rim film:junk    the idle moves
 node dev/shoot.mjs film:tap film:cling film:throw               pointing things out; a cross marks each spot he touched
+node dev/shoot.mjs film:dash@1800x1680 film:bound@1800x1920     getting there in a hurry, frame by frame
 pnpm typecheck
 ```
 
-`PESTO_SENSE_LOG=1` prints sense event counts. Through poke or the overlay's devtools, `pesto.say("…")` talks to him, `pesto.director.perform("dance")` plays a reaction, `pesto.director.perform("tap", { target: "cursor" })` (or `"throw"`, `"point"`) shows a spot, `pesto.sight.look(pesto.world.foreground)` lists what he can see in a window, `pesto.decider.last` shows the last silent decision. Debug in his menu (`debug.panel`) draws a live trace in the corner of his screen: every request to the decision model with its time and likeliest answers, what his ears heard, and why he did or did not react while listening. The same lines go to the console and `pesto.trace.lines`.
+`PESTO_SENSE_LOG=1` prints sense event counts. Through poke or the overlay's devtools, `pesto.say("…")` talks to him, `pesto.director.perform("dance")` plays a reaction, `pesto.director.perform("tap", { target: "cursor" })` (or `"throw"`, `"point"`) shows a spot, `pesto.sight.look(pesto.world.foreground)` lists what he can see in a window, `pesto.decider.last` shows the last silent decision. Debug in his menu (`debug.panel`) draws a live trace in the corner of his screen: every request to the decision model with its time and likeliest answers, what his ears heard, why he did or did not react while listening, and the route of each dash. The same lines go to the console and `pesto.trace.lines`.
