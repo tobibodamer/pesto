@@ -1,5 +1,5 @@
 import type { Actor } from "../pesto/actor";
-import type { WindowInfo } from "../sense/types";
+import type { FocusedElement, WindowInfo } from "../sense/types";
 import type { World } from "../world/world";
 
 export type JournalKind =
@@ -28,6 +28,7 @@ const TITLE_MAX = 90;
 
 const clip = (s: string, n = TITLE_MAX) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const app = (w: WindowInfo) => w.exe.replace(/\.exe$/, "");
+const element = (f: FocusedElement) => `${f.kind}${f.name ? ` «${clip(f.name, 40)}»` : ""} in ${f.exe.replace(/\.exe$/, "")}`;
 const two = (n: number) => String(n).padStart(2, "0");
 const clock = (ms: number) => {
   const d = new Date(ms);
@@ -56,6 +57,8 @@ export class Journal {
   private talking = false;
   private away = false;
   private lastMedia = "";
+  private typingSince = -Infinity;
+  private typingLogged = false;
 
   constructor(
     private world: World,
@@ -121,6 +124,18 @@ export class Journal {
       if (current && this.focus && this.focus.hwnd === t.hwnd && current.title !== this.focus.title) {
         this.focus.title = current.title;
         this.add("desk", `${app(current)} now shows «${clip(current.title)}»`, 1);
+      }
+    }
+
+    // A few seconds of steady typing is worth a line; a keystroke or two is not.
+    if (!w.typing) {
+      this.typingSince = -Infinity;
+      this.typingLogged = false;
+    } else {
+      if (this.typingSince === -Infinity) this.typingSince = w.time;
+      if (!this.typingLogged && w.time - this.typingSince > 4 && w.focus) {
+        this.typingLogged = true;
+        this.add("desk", `typing in ${element(w.focus)}`, 0);
       }
     }
 
@@ -212,6 +227,7 @@ export class Journal {
     if (playing) lines.push(`Playing: ${[playing.artist, playing.title].filter(Boolean).join(" – ")}`);
     else if (w.audio.out > 0.02) lines.push(`Sound is playing${w.audio.sessions[0] ? ` from ${w.audio.sessions[0].exe}` : ""}.`);
     if (this.focus) lines.push(`Current window has had focus for ${formatSpan(this.focusSeconds)}.`);
+    if (w.focus) lines.push(`Focused inside it: ${element(w.focus)}${w.typing ? ", being typed in" : ""}.`);
     if (w.system.battery && !w.system.battery.charging) lines.push(`Battery ${Math.round(w.system.battery.percent)}%, not charging.`);
     return { text: lines.join("\n"), ids };
   }

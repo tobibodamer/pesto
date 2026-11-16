@@ -164,6 +164,9 @@ export class Director {
   private idleIn = rand(2, 5);
   private outFor = 0;
   private loudFor = 0;
+  /** Whether he watches the current burst of typing; decided afresh for each burst. */
+  private watchingTyping = false;
+  private lastCaretAt = -Infinity;
   private clockIn = 0;
 
   constructor(
@@ -203,6 +206,18 @@ export class Director {
       } else if (!a.busy || a.sitting) {
         a.lookAt(x, y, 1.4);
       }
+    });
+    world.on("elementFocused", (f) => {
+      const p = world.actionPoint;
+      if (!p || f.kind === "window" || f.kind === "pane" || a.mode === "can") return;
+      if (!a.busy || a.sitting) a.lookAt(p.x, p.y, 1.2);
+    });
+    world.on("caretMoved", () => {
+      if (world.time - this.lastCaretAt > 2) this.watchingTyping = chance(0.6);
+      this.lastCaretAt = world.time;
+      const p = world.actionPoint;
+      if (!p || !this.watchingTyping || a.mode === "can") return;
+      if (!a.busy || a.sitting) a.lookAt(p.x, p.y, 1.2);
     });
     world.on("windowOpened", (w) => {
       if (a.mode === "can" || a.busy) return;

@@ -32,7 +32,7 @@ In order. Each step leaves the app in a runnable state.
 | Part | Where | State |
 |---|---|---|
 | Overlay window: transparent, click-through, always on top, never takes focus, spans all monitors | `src-tauri/src/overlay.rs` | ✅ |
-| Sense layer: monitors, windows (title, exe, rect, state, foreground, dragging), cursor, audio levels and sessions, media, idle, battery, CPU | `src-tauri/src/sense/` | ✅ events flow; values spot-checked for monitors, windows, cursor, media |
+| Sense layer: monitors, windows (title, exe, rect, state, foreground, dragging), focused element, cursor, audio levels and sessions, media, idle, battery, CPU | `src-tauri/src/sense/` | ✅ events flow; values spot-checked for monitors, windows, cursor, media |
 | Sense contract and bridge | `src/sense/` | ✅ |
 | World model: events, ledges from taskbars and window tops | `src/world/world.ts` | ✅ in the headless harness, 🟡 on the real desktop |
 | Character rig, emotions, moves | `src/pesto/` | ✅ design session is polishing |
@@ -72,12 +72,12 @@ In order. Each step leaves the app in a runnable state.
 | In a call / screen sharing detection | ⬜ |
 | ActivityWatch adapter, Discord activity | ⬜ |
 | Screen vision: screenshots to the model on demand | ⬜ |
-| Focused element in any window (UI Automation): kind, name, rect | 🟡 prototype |
+| Focused element in any window (UI Automation): kind, name, rect, text caret | 🟡 `sense/focus.rs`, seen live; the caret is untested. He glances at a newly focused element and watches some bursts of typing; the model gets one line about it |
 | Elements that change, move or matter most in a window | ⬜ |
 | UI element positions (buttons, scrollbar, tab strip, close button) for pointing and clicking | ⬜ |
 | Recycle bin contents, deletes, emptying | ⬜ |
 | Downloads folder watcher | ⬜ |
-| Typing activity (rate only, never content) | ⬜ |
+| Typing activity (rate only, never content) | 🟡 from the caret moving |
 | Beat detection for music | ⬜ |
 | Sudden loud sound detection | ⬜ |
 | CPU temperature | ⬜ |

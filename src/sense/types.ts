@@ -112,6 +112,25 @@ export interface SystemEvent {
   cpu: number;
 }
 
+/** The element holding the keyboard focus inside the foreground app, as UI Automation reports it. */
+export interface FocusedElement {
+  /** Control type, lowercase: "edit", "document", "button", "listitem", … "other" for the rest. */
+  kind: string;
+  /** Its accessible name, whitespace collapsed, at most 60 characters. Often a label, sometimes a document title. */
+  name: string;
+  rect: Rect;
+  exe: string;
+  /** The top-level window it belongs to. */
+  hwnd: number;
+  /** The text caret, for apps that report one. Moves as someone types. */
+  caret: Rect | null;
+}
+
+/** Event `sense://focus`. Polled at about 7 Hz, sent when anything in it changes. Null while Pesto's own windows have focus. */
+export interface FocusEvent {
+  element: FocusedElement | null;
+}
+
 /** Result of the `sense_snapshot` command: the latest value of every event. */
 export interface SenseSnapshot {
   monitors: MonitorsEvent;
@@ -120,6 +139,7 @@ export interface SenseSnapshot {
   audio: AudioEvent;
   media: MediaEvent;
   system: SystemEvent;
+  focus: FocusEvent;
 }
 
 export interface SenseEvents {
@@ -129,6 +149,7 @@ export interface SenseEvents {
   "sense://audio": AudioEvent;
   "sense://media": MediaEvent;
   "sense://system": SystemEvent;
+  "sense://focus": FocusEvent;
 }
 
 /**

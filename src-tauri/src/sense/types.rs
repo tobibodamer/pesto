@@ -127,6 +127,21 @@ pub struct SystemEvent {
     pub cpu: f32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FocusedElement {
+    pub kind: String,
+    pub name: String,
+    pub rect: Rect,
+    pub exe: String,
+    pub hwnd: i64,
+    pub caret: Option<Rect>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FocusEvent {
+    pub element: Option<FocusedElement>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SenseSnapshot {
     pub monitors: MonitorsEvent,
@@ -135,4 +150,5 @@ pub struct SenseSnapshot {
     pub audio: AudioEvent,
     pub media: MediaEvent,
     pub system: SystemEvent,
+    pub focus: FocusEvent,
 }

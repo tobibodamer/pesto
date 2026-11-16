@@ -1,6 +1,8 @@
 import type {
   AudioEvent,
   CursorEvent,
+  FocusEvent,
+  FocusedElement,
   MediaEvent,
   MonitorInfo,
   MonitorsEvent,
@@ -39,6 +41,10 @@ export class World {
   media: MediaEvent = { sessions: [] };
   system: SystemEvent = { idleMs: 0, battery: null, cpu: 0 };
   ledges: Ledge[] = [];
+  /** The focused element inside the foreground app. */
+  focus: FocusedElement | null = null;
+  /** World time the caret last moved: a sign someone is typing. */
+  caretMovedAt = -Infinity;
   /** Seconds since the stage started; advanced by the stage. */
   time = 0;
 
@@ -120,6 +126,33 @@ export class World {
 
   setSystem(e: SystemEvent) {
     this.system = e;
+  }
+
+  setFocus(e: FocusEvent) {
+    const before = this.focus;
+    const now = e.element;
+    this.focus = now;
+    if (!now) return;
+    const same = before && before.hwnd === now.hwnd && before.kind === now.kind && before.name === now.name && sameRect(before.rect, now.rect);
+    if (!same) this.emit("elementFocused", now);
+    else if (now.caret && (!before.caret || !sameRect(before.caret, now.caret))) {
+      this.caretMovedAt = this.time;
+      this.emit("caretMoved", now);
+    }
+  }
+
+  /** Whether the caret has moved in the last couple of seconds. */
+  get typing() {
+    return this.time - this.caretMovedAt < 2;
+  }
+
+  /** Where the action is in the focused app: the caret if there is one, else the middle of the focused element. */
+  get actionPoint(): { x: number; y: number } | null {
+    const f = this.focus;
+    if (!f) return null;
+    if (f.caret) return { x: f.caret.x + f.caret.w / 2, y: f.caret.y + f.caret.h / 2 };
+    if (f.rect.w <= 0 || f.rect.h <= 0) return null;
+    return { x: f.rect.x + f.rect.w / 2, y: f.rect.y + Math.min(f.rect.h / 2, 40) };
   }
 
   /** Advances time and lets cursor velocity decay when no samples arrive. */
@@ -251,4 +284,8 @@ export interface WorldEvents {
   mouseUp: { x: number; y: number; buttons: number };
   audio: { now: number; before: number };
   media: MediaEvent;
+  elementFocused: FocusedElement;
+  caretMoved: FocusedElement;
 }
+
+const sameRect = (a: Rect, b: Rect) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;

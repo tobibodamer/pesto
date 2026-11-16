@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod cursor;
+pub mod focus;
 pub mod media;
 pub mod monitors;
 pub mod system;
@@ -15,7 +16,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use self::types::{AudioEvent, MediaEvent, Rect, SenseSnapshot};
+use self::types::{AudioEvent, FocusEvent, MediaEvent, Rect, SenseSnapshot};
 
 pub struct SenseLogCounters {
     pub monitors: AtomicU64,
@@ -24,6 +25,7 @@ pub struct SenseLogCounters {
     pub audio: AtomicU64,
     pub media: AtomicU64,
     pub system: AtomicU64,
+    pub focus: AtomicU64,
 }
 
 impl SenseLogCounters {
@@ -36,6 +38,7 @@ impl SenseLogCounters {
                 audio: AtomicU64::new(0),
                 media: AtomicU64::new(0),
                 system: AtomicU64::new(0),
+                focus: AtomicU64::new(0),
             }))
         } else {
             None
@@ -50,6 +53,7 @@ impl SenseLogCounters {
             ("sense://audio", self.audio.swap(0, Ordering::Relaxed)),
             ("sense://media", self.media.swap(0, Ordering::Relaxed)),
             ("sense://system", self.system.swap(0, Ordering::Relaxed)),
+            ("sense://focus", self.focus.swap(0, Ordering::Relaxed)),
         ];
         for (name, count) in entries {
             if count > 0 {
@@ -106,6 +110,7 @@ impl SenseState {
                 sessions: Vec::new(),
             },
             system,
+            focus: FocusEvent { element: None },
         };
 
         Arc::new(Self {
@@ -182,6 +187,7 @@ pub fn start_sense(app: AppHandle, state: Arc<SenseState>, overlay_hwnd: isize) 
         windows::spawn_windows_thread(app.clone(), Arc::clone(&state), Arc::clone(&windows_tid)),
         audio::spawn_audio_thread(app.clone(), Arc::clone(&state)),
         media::spawn_media_thread(app.clone(), Arc::clone(&state)),
+        focus::spawn_focus_thread(app.clone(), Arc::clone(&state)),
         system::spawn_system_thread(app, Arc::clone(&state), overlay_hwnd),
     ];
     SenseHandles {

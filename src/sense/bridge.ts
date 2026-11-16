@@ -26,6 +26,7 @@ export async function connectSenses(world: World) {
     on("sense://audio", (e) => world.setAudio(e)),
     on("sense://media", (e) => world.setMedia(e)),
     on("sense://system", (e) => world.setSystem(e)),
+    on("sense://focus", (e) => world.setFocus(e)),
   ]);
   const snap: SenseSnapshot = await call("sense_snapshot");
   world.setMonitors(snap.monitors);
@@ -34,6 +35,7 @@ export async function connectSenses(world: World) {
   world.setAudio(snap.audio);
   world.setMedia(snap.media);
   world.setSystem(snap.system);
+  world.setFocus(snap.focus);
 }
 
 let lastRegions = "";
