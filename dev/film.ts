@@ -3,6 +3,7 @@
 import { seed } from "../src/pesto/math";
 import * as moves from "../src/pesto/moves";
 import type { WindowInfo } from "../src/sense/types";
+import { JUNK_KINDS } from "../src/stage/litter";
 import { Stage } from "../src/stage/stage";
 
 declare global {
@@ -213,6 +214,67 @@ const SCENARIOS: Record<string, Scenario> = {
         );
       }
       at(t, 4, () => void a.run(moves.startle(a)));
+    },
+  },
+  // Combing and licking his tail, close up.
+  groom: {
+    zoom: 4,
+    frames: [2.6, 3.0, 3.4, 3.8, 4.2, 4.6, 5.0, 5.4, 5.8, 6.2, 9.4, 9.9],
+    script: (s, t, first) => {
+      if (first) {
+        s.director.autonomous = false;
+        const a = s.actor;
+        void a.run(
+          (function* () {
+            yield* moves.exitCan(a, { quick: true });
+            yield* moves.walkTo(a, 1150);
+            yield* moves.groom(a, 7);
+          })(),
+        );
+      }
+    },
+  },
+  // Slouching on one arm, then stretched out on his side.
+  lounge: {
+    zoom: 3.4,
+    frames: [3.0, 3.3, 4.2, 6.0, 6.6, 7.0, 7.3, 8.0, 9.5, 11.0, 12.3, 12.8],
+    script: (s, t, first) => {
+      if (first) {
+        s.director.autonomous = false;
+        const a = s.actor;
+        void a.run(
+          (function* () {
+            yield* moves.exitCan(a, { quick: true });
+            yield* moves.walkTo(a, 1050);
+            yield* moves.lounge(a, 3, "slouch");
+            yield* moves.lounge(a, 5, "lie");
+          })(),
+        );
+      }
+    },
+  },
+  // Hanging on the rim of the can with the lid on his head.
+  rim: {
+    zoom: 3.4,
+    frames: [0.3, 0.95, 1.1, 1.25, 1.4, 1.7, 2.6, 4.0, 5.5, 6.75, 6.9, 7.4],
+    script: (s, t, first) => {
+      if (first) {
+        s.director.autonomous = false;
+        void s.actor.run(moves.leanOut(s.actor, 5));
+      }
+      s.world.setCursor({ x: 700 + Math.sin(t * 0.9) * 500, y: 500 + Math.cos(t * 1.3) * 150, buttons: 0 });
+    },
+  },
+  // Junk flung out of the can: the throw, the bounces, the pile and the oldest piece fading.
+  junk: {
+    zoom: 2.2,
+    frames: [0.8, 1.0, 1.15, 1.3, 1.6, 2.4, 4.3, 5.4, 6.4, 7.2, 9.5, 27.5],
+    script: (s, t, first) => {
+      if (first) s.director.autonomous = false;
+      at(t, 0.05, () => void s.director.perform("toss"));
+      // One of each kind after the first throw, so the whole set can be checked.
+      JUNK_KINDS.forEach((kind, i) => at(t, 3.6 + i * 0.7, () => s.litter.toss(s.can.x, s.can.y - 130, -150 - i * 90, -800, kind)));
+      at(t, 8.6, () => void s.director.perform("toss"));
     },
   },
   idle: {

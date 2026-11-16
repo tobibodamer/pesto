@@ -191,6 +191,11 @@ export class Puppet {
     }
   }
 
+  /** The tail's centreline from base to tip, in pose space, as it is right now. */
+  get tailNodes(): readonly Vec[] {
+    return this.tail.nodes;
+  }
+
   blinkNow() {
     if (this.blinkPhase === "open") this.blinkPhase = "closing";
   }

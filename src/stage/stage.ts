@@ -1,74 +1,16 @@
 import { Director } from "../brain/director";
 import { CAN, Can } from "../can/can";
 import { Actor } from "../pesto/actor";
-import { StickerPainter } from "../render/sticker";
 import type { Rect } from "../sense/types";
 import { World } from "../world/world";
 import { Paper } from "./bubble";
+import { Litter, drawJunk, type Junk } from "./litter";
 import { Menu } from "./menu";
-
-/** One canvas element positioned in virtual-desktop pixels. */
-class Sprite {
-  readonly canvas: HTMLCanvasElement;
-  readonly ctx: CanvasRenderingContext2D;
-  readonly painter: StickerPainter;
-  private shown = true;
-
-  constructor(
-    parent: HTMLElement,
-    readonly width: number,
-    readonly height: number,
-    /** Where the entity's origin sits inside the canvas. */
-    readonly ox: number,
-    readonly oy: number,
-    z: number,
-  ) {
-    this.canvas = document.createElement("canvas");
-    this.canvas.width = width;
-    this.canvas.height = height;
-    Object.assign(this.canvas.style, { position: "absolute", left: "0", top: "0", zIndex: String(z), willChange: "transform" });
-    parent.appendChild(this.canvas);
-    this.ctx = this.canvas.getContext("2d")!;
-    this.painter = new StickerPainter(width, height);
-  }
-
-  moveTo(x: number, y: number) {
-    this.canvas.style.transform = `translate3d(${Math.round(x - this.ox)}px, ${Math.round(y - this.oy)}px, 0)`;
-  }
-
-  show(on: boolean) {
-    if (on === this.shown) return;
-    this.shown = on;
-    this.canvas.style.display = on ? "" : "none";
-  }
-
-  /** Thins out part of what was painted with an ordered dither. `amount` 0 leaves it, 1 removes it. Sprite-local pixels. */
-  dissolve(x: number, y: number, w: number, h: number, amount: number) {
-    const pattern = dither(this.ctx, amount);
-    if (!pattern) return;
-    this.ctx.save();
-    this.ctx.globalCompositeOperation = "destination-out";
-    this.ctx.fillStyle = pattern;
-    this.ctx.fillRect(x, y, w, h);
-    this.ctx.restore();
-  }
-
-  paint(border: number, art: (ctx: CanvasRenderingContext2D) => void) {
-    this.ctx.clearRect(0, 0, this.width, this.height);
-    this.painter.paint(
-      this.ctx,
-      0,
-      0,
-      (c) => {
-        c.translate(this.ox, this.oy);
-        art(c);
-      },
-      { border, shadow: true },
-    );
-  }
-}
+import { Sprite } from "./sprite";
 
 const PAD = 14;
+/** How far a piece of junk reaches from its centre at any angle, in units. */
+const JUNK_REACH = 25;
 
 const CAN_KEY = "pesto.can";
 
@@ -87,25 +29,6 @@ function remember(at: { x: number; y: number }) {
   } catch {
     // Without storage the can simply returns to its corner next time.
   }
-}
-
-const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-const patterns = new Map<number, CanvasPattern | null>();
-
-/** A 4×4 ordered-dither fill covering `amount` of the pixels. */
-function dither(ctx: CanvasRenderingContext2D, amount: number): CanvasPattern | null {
-  const level = Math.round(Math.max(0, Math.min(1, amount)) * 16);
-  if (level === 0) return null;
-  let pattern = patterns.get(level);
-  if (pattern === undefined) {
-    const tile = document.createElement("canvas");
-    tile.width = tile.height = 4;
-    const t = tile.getContext("2d")!;
-    for (let i = 0; i < 16; i++) if (BAYER[i] < level) t.fillRect(i % 4, i >> 2, 1, 1);
-    pattern = ctx.createPattern(tile, "repeat");
-    patterns.set(level, pattern);
-  }
-  return pattern;
 }
 
 function overlap(a: Rect, b: Rect): Rect | null {
@@ -143,7 +66,8 @@ export class Stage {
   readonly world = new World();
   readonly can = new Can();
   readonly actor = new Actor(this.world, this.can);
-  readonly director = new Director(this.world, this.actor, this.can);
+  readonly litter = new Litter(this.world);
+  readonly director = new Director(this.world, this.actor, this.can, this.litter);
 
   readonly paper: Paper;
   readonly menu: Menu;
@@ -152,6 +76,7 @@ export class Stage {
   private canBack: Sprite;
   private canFront: Sprite;
   private canDirty = true;
+  private junk = new Map<Junk, { sprite: Sprite; angle: number; fade: number }>();
   private wasSplit = false;
   private border = 1.5;
   private veil = 0;
@@ -159,11 +84,15 @@ export class Stage {
   private rest = 0;
   private ghost = 0;
 
-  constructor(root: HTMLElement, options: { scale?: number; border?: number } = {}) {
+  constructor(
+    private root: HTMLElement,
+    options: { scale?: number; border?: number } = {},
+  ) {
     if (options.scale) this.actor.scale = options.scale;
     if (options.border != null) this.border = options.border;
     const s = this.actor.scale;
     const cs = this.can.scale;
+    this.litter.scale = cs * 1.25;
     this.canBack = new Sprite(root, Math.ceil(190 * cs) + PAD * 2, Math.ceil(215 * cs) + PAD * 2, 72 * cs + PAD, 203 * cs + PAD, 1);
     this.pesto = new Sprite(root, Math.ceil(310 * s) + PAD * 2, Math.ceil(300 * s) + PAD * 2, 155 * s + PAD, 240 * s + PAD, 2);
     this.canFront = new Sprite(root, Math.ceil(110 * cs) + PAD * 2, Math.ceil(110 * cs) + PAD * 2, 55 * cs + PAD, 103 * cs + PAD, 3);
@@ -188,6 +117,7 @@ export class Stage {
   set stickerBorder(units: number) {
     this.border = Math.max(0, units);
     this.canDirty = true;
+    for (const drawn of this.junk.values()) drawn.angle = NaN;
   }
 
   /** Stands the can where it was last put, or in the bottom-right corner of the primary monitor. */
@@ -255,6 +185,7 @@ export class Stage {
       this.canDirty = true;
     }
     this.can.update(dt);
+    this.litter.update(dt);
     this.director.update(dt);
     this.actor.update(dt);
 
@@ -331,6 +262,8 @@ export class Stage {
       }
     }
 
+    this.renderLitter();
+
     const crown = this.crown;
     const mon = world.monitorAt(crown.x, crown.y + 40);
     this.paper.update(
@@ -358,6 +291,32 @@ export class Stage {
         const top = actor.y - this.pesto.oy;
         for (const r of this.covered()) this.pesto.dissolve(Math.round(r.x - left), Math.round(r.y - top), Math.ceil(r.w), Math.ceil(r.h), this.veil * VEIL);
       }
+    }
+  }
+
+  /** One small sprite per piece of junk, repainted only while it turns or fades. */
+  private renderLitter() {
+    const { litter, world } = this;
+    const k = litter.scale;
+    const half = Math.ceil(JUNK_REACH * k) + PAD;
+    for (const [junk, { sprite }] of this.junk) {
+      if (litter.items.includes(junk)) continue;
+      sprite.remove();
+      this.junk.delete(junk);
+    }
+    for (const junk of litter.items) {
+      let drawn = this.junk.get(junk);
+      if (!drawn) this.junk.set(junk, (drawn = { sprite: new Sprite(this.root, half * 2, half * 2, half, half, 4), angle: NaN, fade: 0 }));
+      drawn.sprite.moveTo(junk.x - world.virtual.x, junk.y - world.virtual.y);
+      if (drawn.angle === junk.angle && drawn.fade === junk.fade) continue;
+      drawn.angle = junk.angle;
+      drawn.fade = junk.fade;
+      drawn.sprite.paint(this.border * 0.82 * k, (c) => {
+        c.rotate(junk.angle);
+        c.scale(k, k);
+        drawJunk(c, junk.kind);
+      });
+      if (junk.fade > 0) drawn.sprite.dissolve(0, 0, half * 2, half * 2, junk.fade);
     }
   }
 

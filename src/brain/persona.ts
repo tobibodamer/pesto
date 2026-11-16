@@ -33,7 +33,7 @@ Directions:
 <go to="…"/>         walk, jump or climb over and stand next to it
 <point at="…"/>      point at it
 <sniff at="…"/>      lean in and sniff it
-<sit/>  <wave/>  <nod/>  <shrug/>  <think/>  <clap/>  <knock/>  <yawn/>  <dance/>  <flop/>  <startle/>
+<sit/>  <lounge/>  <groom/>  <wave/>  <nod/>  <shrug/>  <think/>  <clap/>  <knock/>  <yawn/>  <dance/>  <flop/>  <startle/>
 <sign>23 min.</sign> hold up a cardboard sign: a few words at most
 <note>…</note>       show a paper note, for anything they need to read rather than hear: a command, a link, numbers, steps. **bold** and \`code\` work in it.
 <wait s="0.6"/>      a beat of silence

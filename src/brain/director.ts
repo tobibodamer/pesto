@@ -1,9 +1,10 @@
-import { LID_PEEK, type Can } from "../can/can";
+import { CAN, LID_PEEK, type Can } from "../can/can";
 import type { Actor } from "../pesto/actor";
 import { chance, clamp, pick, rand } from "../pesto/math";
 import * as moves from "../pesto/moves";
 import type { Emotion } from "../pesto/pose";
 import { until, wait, type Routine } from "../pesto/routine";
+import type { Litter } from "../stage/litter";
 import type { Ledge, World } from "../world/world";
 
 /** Where a reaction is aimed. */
@@ -54,6 +55,98 @@ export const REACTIONS = {
       yield* wait(0.6);
     },
   },
+  chew: {
+    describe: "Chew on something inside the can. Heard, not seen.",
+    run: function* (d) {
+      if (d.actor.mode !== "can") return;
+      d.actor.cue("chew");
+      for (let bite = 0; bite < 5; bite++) {
+        d.can.shake(0.2);
+        yield* wait(0.3);
+      }
+    },
+  },
+  mutter: {
+    describe: "Mutter to himself inside the can, too muffled to make out.",
+    run: function* (d) {
+      if (d.actor.mode !== "can") return;
+      d.actor.cue("mutter");
+      d.can.shake(0.15);
+      yield* wait(1.8);
+    },
+  },
+  rattle: {
+    describe: "Knock a tin around inside the can.",
+    run: function* (d) {
+      if (d.actor.mode !== "can") return;
+      d.actor.cue("clank");
+      for (const strength of [1, 0.6, 0.35]) {
+        d.can.shake(strength);
+        yield* wait(0.3);
+      }
+    },
+  },
+  snore: {
+    describe: "Snore inside the can, the lid lifting a little with each breath.",
+    run: function* (d, args) {
+      if (d.actor.mode !== "can") return;
+      try {
+        for (let left = args.seconds ?? 7; left > 0; left -= 2.6) {
+          d.actor.cue("snore");
+          d.can.lid = 0.05;
+          yield* wait(1.1);
+          d.can.lid = 0;
+          yield* wait(1.5);
+        }
+      } finally {
+        d.can.lid = 0;
+      }
+    },
+  },
+  toss: {
+    describe: "Fling a piece of junk out of the can. It lands on the desktop and lies there a while.",
+    run: function* (d) {
+      const { actor: a, can, litter } = d;
+      if (a.mode !== "can") return;
+      try {
+        can.shake(1);
+        a.cue("rustle");
+        yield* wait(rand(0.5, 0.9));
+        can.lid = 0.6;
+        can.shake(0.6);
+        a.cue("lid");
+        yield* until(() => can.opening > 0.3, 0.4);
+        // Toward whichever side has more floor to land on.
+        const floor = d.world.ledgeBelow(can.x, can.y - 4);
+        const side = floor && can.x - floor.x1 < floor.x2 - can.x ? 1 : -1;
+        const k = litter.scale;
+        const junk = litter.toss(can.x + side * 8 * k, can.y + (CAN.rimY - 6) * can.scale, side * rand(150, 430) * k, -rand(640, 900) * k);
+        yield* wait(0.3);
+        // He watches where it went.
+        can.eyes = true;
+        can.lid = LID_PEEK;
+        yield* until(() => {
+          a.lookAt(junk.x, junk.y, 0.5);
+          return junk.resting;
+        }, 2.5);
+        yield* wait(0.6);
+        can.lid = 0;
+        yield* wait(0.25);
+      } finally {
+        can.lid = 0;
+        can.eyes = false;
+      }
+    },
+  },
+  lookOut: {
+    describe: "Push the lid up with his head and hang on the rim of the can, chin on it, watching for a while.",
+    run: function* (d, args) {
+      const seconds = args.seconds ?? rand(8, 20);
+      const p = d.resolve(args.target);
+      if (p) d.actor.lookAt(p.x, p.y, seconds);
+      yield* moves.leanOut(d.actor, seconds);
+    },
+  },
   comeOut: {
     describe: "Climb out of the can and stand beside it.",
     run: (d) => moves.exitCan(d.actor),
@@ -68,7 +161,9 @@ export const REACTIONS = {
       const spot = d.pickSpot();
       if (!spot) return;
       yield* moves.travel(d.actor, spot.ledge.id, spot.x);
-      if (spot.ledge.hwnd != null && chance(0.6)) yield* moves.sit(d.actor, rand(5, 14));
+      if (spot.ledge.hwnd == null || chance(0.4)) return;
+      if (d.relaxed && chance(0.6)) yield* moves.lounge(d.actor, rand(10, 24));
+      else yield* moves.sit(d.actor, rand(5, 14));
     },
   },
   approach: {
@@ -88,6 +183,14 @@ export const REACTIONS = {
   sit: {
     describe: "Sit down where he is with his legs dangling and watch.",
     run: (d, args) => moves.sit(d.actor, args.seconds ?? 8),
+  },
+  lounge: {
+    describe: "Get properly comfortable: slouch on one arm, or stretch out on his side with his head propped on a paw.",
+    run: (d, args) => moves.lounge(d.actor, args.seconds ?? 14),
+  },
+  groom: {
+    describe: "Pull his tail up beside him and groom it with paw and tongue.",
+    run: (d, args) => moves.groom(d.actor, args.seconds ?? 7),
   },
   glance: {
     describe: "Flick his eyes to the target for a moment. The smallest possible reaction.",
@@ -141,7 +244,7 @@ export const REACTION_NAMES = Object.keys(REACTIONS) as ReactionName[];
 
 /** Reactions that only make sense once he is out of the can. */
 const NEEDS_BODY = new Set<ReactionName>([
-  "wander", "approach", "sit", "point", "knock", "sign", "wave", "shrug", "nod", "ponder", "clap", "flop", "dance", "startle", "swat", "yawn", "sniff",
+  "wander", "approach", "sit", "lounge", "groom", "point", "knock", "sign", "wave", "shrug", "nod", "ponder", "clap", "flop", "dance", "startle", "swat", "yawn", "sniff",
 ]);
 
 /**
@@ -175,8 +278,18 @@ export class Director {
     readonly world: World,
     readonly actor: Actor,
     readonly can: Can,
+    readonly litter: Litter,
   ) {
     const a = actor;
+    litter.onLand = (junk) => junk.kind === "tin" && a.cue("clank");
+    // Clicked while he hangs on the rim, he drops back inside.
+    world.on("mouseDown", (e) => {
+      const hit = a.hitRect;
+      if (a.mode !== "emerge" || !(e.buttons & 1) || !hit) return;
+      if (e.x < hit.x || e.x > hit.x + hit.w || e.y < hit.y || e.y > hit.y + hit.h) return;
+      a.cue("eep");
+      void a.run(moves.duck(a));
+    });
     a.on("poked", () => void this.perform("swat"));
     a.on("petted", () => a.cue("chitter"));
     a.on("grabbed", () => this.onGrabbed());
@@ -294,7 +407,7 @@ export class Director {
     return this.actor.run(
       (function* () {
         if (NEEDS_BODY.has(name)) {
-          if (d.actor.mode === "can") yield* moves.exitCan(d.actor, { quick: true });
+          if (d.actor.mode === "can" || d.actor.mode === "emerge") yield* moves.exitCan(d.actor, { quick: true });
           if (d.actor.mode === "air" || d.actor.mode === "glass") yield* until(() => d.actor.mode === "ground", 12);
         }
         yield* run(d, args);
@@ -348,6 +461,11 @@ export class Director {
     return { ledge, x: rand(x1, x2) };
   }
 
+  /** Out long enough, or sleepy enough, to make himself comfortable instead of sitting up straight. */
+  get relaxed() {
+    return this.loudFor <= 0 && (this.outFor > 30 || this.actor.mood === "sleepy");
+  }
+
   private *inspectGround(): Routine {
     const a = this.actor;
     yield* wait(0.5);
@@ -398,9 +516,21 @@ export class Director {
       this.idleIn = rand(7, 22);
       if (away) return;
       const roll = rand(0, 1);
-      if (roll < 0.5) void this.perform("peek", { target: "cursor" });
-      else if (roll < 0.68) void this.perform("rustle");
+      if (a.mood === "sleepy" && roll < 0.3) void this.perform("snore");
+      else if (roll < 0.32) void this.perform("peek", { target: "cursor" });
+      else if (roll < 0.44) void this.perform("lookOut");
+      else if (roll < 0.51) void this.perform("rustle");
+      else if (roll < 0.56) void this.perform("chew");
+      else if (roll < 0.61) void this.perform("mutter");
+      else if (roll < 0.65) void this.perform("rattle");
+      else if (roll < 0.72) void this.perform("toss");
       else void this.perform("comeOut");
+      return;
+    }
+    if (a.mode === "emerge") {
+      // Left half out of the can by something that interrupted him.
+      this.idleIn = rand(3, 8);
+      void this.perform(away || chance(0.5) ? "goHome" : "comeOut");
       return;
     }
 
@@ -416,10 +546,12 @@ export class Director {
       return;
     }
     const roll = rand(0, 1);
-    if (roll < 0.38) void this.perform("wander");
-    else if (roll < 0.56) void this.perform("sit", { seconds: rand(6, 16) });
-    else if (roll < 0.66 && a.mood === "sleepy") void this.perform("yawn");
-    else if (roll < 0.76) void this.perform("glance", { target: "cursor", emotion: "curious" });
+    if (roll < 0.36) void this.perform("wander");
+    else if (roll < 0.54 && this.relaxed && chance(0.6)) void this.perform("lounge", { seconds: rand(12, 28) });
+    else if (roll < 0.54) void this.perform("sit", { seconds: rand(6, 16) });
+    else if (roll < 0.62) void this.perform("groom", { seconds: rand(6, 11) });
+    else if (roll < 0.7 && a.mood === "sleepy") void this.perform("yawn");
+    else if (roll < 0.8) void this.perform("glance", { target: "cursor", emotion: "curious" });
     else this.idleIn = rand(2, 5);
   }
 }

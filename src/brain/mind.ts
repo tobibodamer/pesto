@@ -175,6 +175,8 @@ function describeSelf(actor: Actor): string {
       return "You are clinging to the glass.";
     case "air":
       return "You are in mid-air.";
+    case "emerge":
+      return "You are half out of your can, hanging on its rim.";
     default:
       return actor.sitting ? "You are out of the can, sitting on a ledge." : "You are out of the can, standing on the screen.";
   }

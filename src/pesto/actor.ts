@@ -239,18 +239,27 @@ export class Actor {
     return this.mode !== "can";
   }
 
+  /** Which side his head is on while he lies stretched out, -1 or 1. 0 when he is upright. */
+  private get lying() {
+    const spin = this.puppet.pose.spin;
+    return this.mode === "ground" && Math.abs(spin) > 1 ? sign(spin) : 0;
+  }
+
   /** Where clicks should land on him instead of the app underneath. */
   get hitRect(): Rect | null {
     if (!this.visible) return null;
     const s = this.scale;
+    const h = this.lying;
+    if (h) return { x: this.x - (h > 0 ? 60 : 105) * s, y: this.y - 100 * s, w: 165 * s, h: 108 * s };
     return { x: this.x - 50 * s, y: this.y - 156 * s, w: 100 * s, h: 164 * s };
   }
 
   private over(px: number, py: number) {
     if (!this.visible || this.mode === "emerge") return false;
     const s = this.scale;
-    const dx = (px - this.x) / (46 * s);
-    const dy = (py - (this.y - 72 * s)) / (84 * s);
+    const h = this.lying;
+    const dx = h ? (px - this.x - h * 22 * s) / (85 * s) : (px - this.x) / (46 * s);
+    const dy = h ? (py - (this.y - 45 * s)) / (50 * s) : (py - (this.y - 72 * s)) / (84 * s);
     return dx * dx + dy * dy < 1;
   }
 

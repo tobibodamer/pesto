@@ -21,6 +21,9 @@ const SOUNDS = {
   rustle: [1.5, "something small rummaging through crumpled paper and wrappers inside a metal bin, muffled, close"],
   clank: [0.9, "an empty tin can knocking and rolling inside a metal trash can, short metallic clatter"],
   lid: [0.6, "a light metal trash can lid being set down with a soft metallic clink"],
+  chew: [1.6, "a small animal chewing something crunchy with quick little munches, close, dry, no background"],
+  mutter: [1.8, "a small raccoon muttering to itself in low grumbly cartoon gibberish, no real words, close, dry"],
+  snore: [2.4, "a tiny cartoon animal snoring once, a soft rattling breath in and a whistling breath out, close, dry"],
 };
 
 const config = JSON.parse(fs.readFileSync(`${process.env.APPDATA}/dev.pesto.app/config.json`, "utf8").replace(/^﻿/, ""));

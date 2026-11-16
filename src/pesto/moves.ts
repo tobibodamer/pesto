@@ -1,7 +1,7 @@
 import { CAN, LID_OPEN, LID_PEEK } from "../can/can";
 import type { Ledge } from "../world/world";
 import { GRAVITY, type Actor } from "./actor";
-import { chance, clamp, easeInOut, easeOut, easeOutBack, lerp, pick, rand, sign, smooth, type Vec } from "./math";
+import { chance, clamp, easeIn, easeInOut, easeOut, easeOutBack, lerp, noise, pick, rand, sign, smooth, type Vec } from "./math";
 import type { Pose } from "./pose";
 import { Interrupted, tween, until, wait, type Routine } from "./routine";
 
@@ -237,6 +237,7 @@ export function* exitCan(a: Actor, opts: { quick?: boolean } = {}): Routine {
     }
   }
   a.need("emerge");
+  can.lid = LID_OPEN;
   const ledge = a.world.ledgeBelow(can.x, can.y - 4);
   if (!ledge) throw new Interrupted("can has no floor");
   // Hop out toward whichever side has more floor.
@@ -258,6 +259,7 @@ export function* exitCan(a: Actor, opts: { quick?: boolean } = {}): Routine {
 /** Goes home: travels to the can, jumps in, and the lid slams. */
 export function* enterCan(a: Actor): Routine {
   if (a.mode === "can") return;
+  if (a.mode === "emerge") return yield* duck(a);
   const can = a.can;
   const s = a.scale;
   const ledge = a.world.ledgeBelow(can.x, can.y - 4);
@@ -283,6 +285,72 @@ export function* enterCan(a: Actor): Routine {
   can.slam();
   can.shake(1);
   a.cue("clank");
+}
+
+/** Lid opening at which it leans on the back of his head while he hangs on the rim. */
+const LID_PROPPED = 0.46;
+/** How far below the rim his feet are while his chin rests on it, in units. */
+const RIM_CHIN = 62;
+
+/**
+ * From inside the can: pushes the lid up with his head and hangs on the rim
+ * with his chin on it, watching the desktop, then sinks back in.
+ */
+export function* leanOut(a: Actor, seconds: number): Routine {
+  a.need("can");
+  const can = a.can;
+  const s = a.scale;
+  can.eyes = true;
+  can.lid = LID_PEEK;
+  yield* wait(rand(0.4, 0.9));
+  can.lid = LID_PROPPED;
+  can.shake(0.4);
+  yield* until(() => can.opening > 0.42, 0.6);
+  can.eyes = false;
+  a.mode = "emerge";
+  a.x = can.x;
+  const rim = a.rimY;
+  a.clipY = rim;
+  const hidden = rim + 150 * s;
+  const up = rim + RIM_CHIN * s;
+  a.y = hidden;
+  a.puppet.snap();
+  let t = 0;
+  // Now and then one paw drums on the rim.
+  let drumAt = rand(3, 7);
+  a.gesture = (p, dt) => {
+    t += dt;
+    if (t > drumAt + 1) drumAt = t + rand(4, 9);
+    const drum = t > drumAt ? Math.max(0, Math.sin((t - drumAt) * 26)) * 2.5 : 0;
+    p.handLX = -39;
+    p.handLY = -RIM_CHIN - 5;
+    p.handRX = 39;
+    p.handRY = -RIM_CHIN - 5 - drum;
+    p.tailLift = -0.9;
+    p.tailWag = 0;
+    p.headY += 2 + Math.sin(t * 0.8) * 0.8;
+    p.tilt += noise(t * 0.25, 5) * 0.07;
+    p.lidL += 0.12;
+    p.lidR += 0.12;
+    p.earL += 0.1;
+    p.earR += 0.1;
+  };
+  yield* tween(0.45, (u) => (a.y = lerp(hidden, up, easeOutBack(u, 1))));
+  yield* until(() => a.mode !== "emerge", seconds);
+  yield* duck(a);
+}
+
+/** From half out of the can: sinks back inside and lets the lid down. */
+export function* duck(a: Actor): Routine {
+  a.need("emerge");
+  const from = a.y;
+  const rim = a.rimY;
+  const hidden = rim + 150 * a.scale;
+  a.clipY = rim;
+  yield* tween(0.3, (u) => (a.y = lerp(from, hidden, easeIn(u))));
+  a.vanish();
+  a.can.lid = 0;
+  a.can.shake(0.3);
 }
 
 // ───────────────────────── gestures ─────────────────────────
@@ -751,6 +819,155 @@ export function* sit(a: Actor, seconds: number): Routine {
   a.sitting = true;
   yield* until(() => a.mode !== "ground" || !a.sitting, seconds);
   a.sitting = false;
+}
+
+/** A point `at` nodes along his tail, in pose space. */
+function alongTail(a: Actor, at: number): Vec {
+  const nodes = a.puppet.tailNodes;
+  const i = clamp(Math.floor(at), 0, nodes.length - 2);
+  const u = clamp(at - i, 0, 1);
+  return { x: lerp(nodes[i].x, nodes[i + 1].x, u), y: lerp(nodes[i].y, nodes[i + 1].y, u) };
+}
+
+/** Pulls his tail up beside him and works along it: a few combing strokes of the paw, then some licks. */
+export function* groom(a: Actor, seconds = 7): Routine {
+  a.need("ground");
+  a.sitting = false;
+  // The tail trails on the side away from his heading; that is where he turns to reach it.
+  const side = -a.dir;
+  const STROKES = 1.7;
+  const CYCLE = 3.1;
+  let t = 0;
+  a.gesture = (p, dt) => {
+    t += dt;
+    const k = smooth(clamp(t / 0.5, 0, 1)) * smooth(clamp((seconds - t) / 0.4, 0, 1));
+    const phase = t % CYCLE;
+    const licking = phase > STROKES ? smooth(clamp((phase - STROKES) / 0.2, 0, 1)) * smooth(clamp((CYCLE - phase) / 0.2, 0, 1)) : 0;
+    const lick = licking * Math.max(0, Math.sin((phase - STROKES) * 15));
+    // Each stroke runs up the tail and comes back clear of it.
+    const stroke = (phase % (STROKES / 2)) / (STROKES / 2);
+    const up = phase < STROKES ? Math.sin(Math.min(1, stroke / 0.7) * Math.PI * 0.5) : 0.55;
+    const clear = phase < STROKES && stroke > 0.7 ? Math.sin(((stroke - 0.7) / 0.3) * Math.PI) : 0;
+    const grip = alongTail(a, lerp(3, 6.4, up));
+
+    p.facing = lerp(p.facing, -side * 0.3, k);
+    p.lean += side * 0.15 * k;
+    p.squash += 0.07 * k;
+    p.yaw = lerp(p.yaw, side * 0.8, k);
+    p.pitch = lerp(p.pitch, 0.3, k) + lick * 0.25;
+    p.tilt += side * (0.1 + licking * 0.1) * k;
+    p.headX += side * (2 + licking * 3 + lick * 1.5) * k;
+    p.headY += (licking * 3 + lick * 1.5) * k;
+    p.gazeX = lerp(p.gazeX, side * 0.85, k);
+    p.gazeY = lerp(p.gazeY, 0.55, k);
+    p.lidL += 0.22 * k;
+    p.lidR += 0.22 * k;
+    p.tongue = Math.max(p.tongue, licking * k);
+    p.mouthOpen = Math.max(p.mouthOpen, licking * 0.3 * k);
+    p.tailLift = lerp(p.tailLift, 0.1, k);
+    p.tailCurl = lerp(p.tailCurl, 0.22, k);
+    p.tailWag *= 1 - k;
+
+    const hx = grip.x + side * clear * 9;
+    const hy = grip.y - clear * 4;
+    const rest = { x: side * 5, y: -37 };
+    if (side > 0) {
+      p.handRX = lerp(p.handRX, hx, k);
+      p.handRY = lerp(p.handRY, hy, k);
+      p.handLX = lerp(p.handLX, rest.x, k);
+      p.handLY = lerp(p.handLY, rest.y, k);
+    } else {
+      p.handLX = lerp(p.handLX, hx, k);
+      p.handLY = lerp(p.handLY, hy, k);
+      p.handRX = lerp(p.handRX, rest.x, k);
+      p.handRY = lerp(p.handRY, rest.y, k);
+    }
+  };
+  yield* wait(seconds);
+  a.gesture = null;
+}
+
+/** Whether the ledge has room either side of him to stretch out on. */
+function roomToLie(a: Actor): boolean {
+  const ledge = a.ledge;
+  const room = 125 * a.scale;
+  return !!ledge && a.x - ledge.x1 > room && ledge.x2 - a.x > room;
+}
+
+/**
+ * Properly relaxed. Slouching, he sits leaning on one arm; lying, he
+ * stretches out along the ledge on his side with his head propped on a paw.
+ */
+export function* lounge(a: Actor, seconds: number, style: "slouch" | "lie" = chance(0.6) ? "lie" : "slouch"): Routine {
+  a.need("ground");
+  if (style === "lie" && !roomToLie(a)) style = "slouch";
+  // His head ends up on the side he had his back to.
+  const h = -a.dir;
+  let k = 0;
+  let t = 0;
+  a.sitting = true;
+  a.gesture =
+    style === "lie"
+      ? (p, dt) => {
+          t += dt;
+          const bob = Math.sin(t * 1.9);
+          p.spin = h * (Math.PI / 2) * k;
+          p.lift = lerp(p.lift, -9, k);
+          p.squash = lerp(p.squash, 0.04, k);
+          p.lean *= 1 - k;
+          p.tilt = lerp(p.tilt, -h * 1.12, k);
+          p.headY -= 5 * k;
+          // The arm underneath props his head; the other lies along his side.
+          const prop = { x: h * 5, y: -93 };
+          const idle = { x: -h * 27, y: -34 };
+          const [l, r] = h < 0 ? [prop, idle] : [idle, prop];
+          p.handLX = lerp(p.handLX, l.x, k);
+          p.handLY = lerp(p.handLY, l.y, k);
+          p.handRX = lerp(p.handRX, r.x, k);
+          p.handRY = lerp(p.handRY, r.y, k);
+          // Legs out along the ground, the upper foot bobbing over the lower.
+          const under = { x: h * 27, y: 5 };
+          const over = { x: h * 6, y: 9 + bob * 1.5 };
+          const [fl, fr] = h < 0 ? [under, over] : [over, under];
+          p.footLX = lerp(p.footLX, fl.x, k);
+          p.footLY = lerp(p.footLY, fl.y, k);
+          p.footRX = lerp(p.footRX, fr.x, k);
+          p.footRY = lerp(p.footRY, fr.y, k);
+          p.tailLift = lerp(p.tailLift, -1.25, k);
+          p.tailCurl = lerp(p.tailCurl, -0.07, k);
+          p.tailWag = lerp(p.tailWag, 0.12, k);
+          p.tailWagHz = lerp(p.tailWagHz, 0.45, k);
+          p.lidL += 0.3 * k;
+          p.lidR += 0.3 * k;
+          p.smile += 0.2 * k;
+        }
+      : (p, dt) => {
+          t += dt;
+          // He leans away from his tail, onto the arm on the clear side.
+          const g = -h;
+          p.lean += g * 0.5 * k;
+          p.tilt -= g * 0.16 * k;
+          p.squash += 0.06 * k;
+          p.pitch += 0.12 * k;
+          const prop = { x: g * 56, y: -9 };
+          const idle = { x: -g * 4, y: -30 };
+          const [l, r] = g < 0 ? [prop, idle] : [idle, prop];
+          p.handLX = lerp(p.handLX, l.x, k);
+          p.handLY = lerp(p.handLY, l.y, k);
+          p.handRX = lerp(p.handRX, r.x, k);
+          p.handRY = lerp(p.handRY, r.y, k);
+          p.tailWag = lerp(p.tailWag, 0.1, k);
+          p.tailWagHz = lerp(p.tailWagHz, 0.5, k);
+          p.lidL += 0.28 * k;
+          p.lidR += 0.28 * k;
+          p.smile += 0.15 * k;
+        };
+  yield* tween(style === "lie" ? 0.6 : 0.45, (u) => (k = easeInOut(u)));
+  yield* until(() => a.mode !== "ground" || !a.sitting, seconds);
+  a.need("ground");
+  yield* tween(0.45, (u) => (k = 1 - easeInOut(u)));
+  a.sitting = false;
+  a.gesture = null;
 }
 
 /** Holds up a cardboard sign. */
