@@ -14,10 +14,14 @@ const API = "https://api.elevenlabs.io/v1";
  * so it is usually ready before the previous one has finished.
  */
 export class ElevenVoice implements Voice {
-  readonly audible = true;
+  /** False while muted, so callers show captions instead. */
+  get audible() {
+    return !this.config.voice.muted;
+  }
 
   private ctx = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
   private master: GainNode;
+  private volume: number;
   private space: Spatializer | null = null;
   private throat: AudioNode;
   private ready: Promise<void>;
@@ -33,7 +37,8 @@ export class ElevenVoice implements Voice {
     private screen: () => Rect | null,
   ) {
     this.master = this.ctx.createGain();
-    this.master.gain.value = config.voice.volume;
+    this.volume = config.voice.volume;
+    this.master.gain.value = this.volume;
     // Catches the rare peak when speech, a sound and the room pile up.
     const limiter = this.ctx.createDynamicsCompressor();
     limiter.threshold.value = -4;
@@ -54,6 +59,7 @@ export class ElevenVoice implements Voice {
   }
 
   prepare(text: string): Line {
+    if (this.config.voice.muted) return this.fallback.prepare(text);
     const audio = this.queued(() => this.synthesise(text)).catch((err) => {
       console.warn("voice:", err);
       return null;
@@ -68,6 +74,7 @@ export class ElevenVoice implements Voice {
   }
 
   cue(name: string) {
+    if (this.config.voice.muted) return;
     let sound = this.sounds.get(name);
     if (!sound) {
       sound = fetch(`/sfx/${name}.mp3`)
@@ -90,7 +97,14 @@ export class ElevenVoice implements Voice {
 
   place(where: Vec, muffled: boolean) {
     if (!this.space) return;
-    const seen = seenFromChair(where, this.screen());
+    const volume = Math.max(0, Math.min(1, this.config.voice.volume));
+    if (volume !== this.volume) {
+      this.volume = volume;
+      this.master.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.03);
+    }
+    const width = Math.max(0, Math.min(1, this.config.voice.width));
+    const seen = seenFromChair(where, this.screen(), width);
+    this.space.spread = width;
     this.space.aim(seen.azimuth, seen.elevation, seen.metres, muffled);
   }
 

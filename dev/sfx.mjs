@@ -6,6 +6,9 @@ import fs from "node:fs";
 
 const SOUNDS = {
   chitter: [1.0, "a small raccoon chittering happily, a short soft trill, very close, dry, no background"],
+  eep: [0.5, "a tiny startled squeak from a small furry animal being picked up, one short high eep, close, dry"],
+  huh: [0.5, "a small raccoon making a short questioning grunt, like a confused huh, close, dry"],
+  grumble: [0.9, "a small raccoon grumbling under its breath, a short low annoyed mutter, close, dry"],
   yelp: [0.6, "a small raccoon giving one short surprised squeal, close, dry, no background"],
   gasp: [0.6, "a tiny cartoon animal's sharp startled gasp, close, dry"],
   dizzy: [1.4, "a small dazed raccoon making a wobbly woozy groan, cartoonish, close, dry"],

@@ -72,6 +72,8 @@ pub fn run() {
             ask::ask_hide,
             ask::ask_submit,
             config::config_load,
+            config::config_patch,
+            config::config_open,
             sense_snapshot,
             overlay_set_hit_regions,
             overlay_hold_interactive,

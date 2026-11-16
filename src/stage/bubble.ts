@@ -7,7 +7,8 @@ const STYLE = `
   top: 0;
   z-index: 5;
   box-sizing: border-box;
-  max-width: 340px;
+  width: max-content;
+  max-width: 560px;
   padding: 10px 14px;
   font: 600 15px/1.35 "Segoe UI", system-ui, sans-serif;
   color: #2c2321;
@@ -25,7 +26,7 @@ const STYLE = `
 }
 .pesto-paper.on { opacity: 1; scale: 1; }
 .pesto-paper.note {
-  max-width: 420px;
+  max-width: 620px;
   padding: 16px 18px;
   font-weight: 500;
   background: #fbf3df;

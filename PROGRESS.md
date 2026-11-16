@@ -127,6 +127,8 @@ In order. Each step leaves the app in a runnable state.
 | Ears point at what he attends to | 🟡 |
 | Only two eyes in the dark can | ✅ |
 | Only eyes on dark backgrounds | ⬜ |
+| Shading from his surroundings: tint and light him from what is behind and around him so he does not read as a paper cutout | ⬜ idea from Tobias; needs screen capture |
+| Sticker border off by default, switchable from the menu | ✅ |
 
 ### Conversation states
 
@@ -227,7 +229,7 @@ In order. Each step leaves the app in a runnable state.
 | Emptying: "My stuff!" | ⬜ |
 | Finds: duplicates, forgotten files | ⬜ |
 | Decor collected over time | ⬜ |
-| Moving the can by dragging it | ⬜ |
+| Moving the can by dragging it | ✅ |
 
 ### Cursor interaction
 
@@ -236,6 +238,8 @@ In order. Each step leaves the app in a runnable state.
 | Petting | ✅ headless, 🟡 live |
 | Poke, swat | ✅ headless, 🟡 live |
 | Scruff grab, limp, looks at what he is over | ✅ headless, 🟡 live |
+| Being picked up: surprised at first, resigned then fed up when it keeps happening; a sound only sometimes, never the same twice | 🟡 sounds unheard |
+| Hand cursor over him and the can, closed hand while carrying | 🟡 written, not seen |
 | Drop: sit on a ledge, otherwise cling and slide | ✅ headless, 🟡 live |
 | Shake dizzy, throw tumble and glare | ✅ headless, 🟡 live |
 | Drag a file onto him | ⬜ |
@@ -277,7 +281,8 @@ In order. Each step leaves the app in a runnable state.
 |---|---|
 | Rest the cursor on him: he dithers see-through and clicks pass to what is behind him until the cursor leaves. A moving cursor still pets, pokes and grabs | ✅ |
 | Taskbars always stay clickable under him, and the part of him over one dithers when the cursor comes near | ✅ |
-| The can gets out of the way too, or can be dragged somewhere else | ⬜ |
+| The can can be dragged anywhere; it drops onto the ledge below and stays there across restarts | ✅ |
+| Pop-art can: tiny most of the time, growing only when he comes out or for an animation. It need not be realistic | ⬜ idea from Tobias |
 | He steps aside instead of only fading | ⬜ |
 
 ## Housekeeping
@@ -288,6 +293,8 @@ In order. Each step leaves the app in a runnable state.
 | Privacy filter for window titles before they reach the model | ⬜ |
 | Tests for the script parser and the performance player | ⬜ |
 | `CLAUDE.md` for agents working in the repo | ⬜ |
+| Right-click menu on him or the can: Talk, Go home / Come out, Voice, Captions, Reactions, Sticker border, Edit settings, Quit. Switches are saved to config.json | ✅ |
+| More switches in the menu as features arrive (sounds, proactivity level, do not disturb) | ⬜ |
 | Settings window instead of editing JSON | ⬜ |
 | Start with Windows | ⬜ |
 | Installer build | ⬜ |

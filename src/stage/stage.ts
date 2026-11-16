@@ -5,6 +5,7 @@ import { StickerPainter } from "../render/sticker";
 import type { Rect } from "../sense/types";
 import { World } from "../world/world";
 import { Paper } from "./bubble";
+import { Menu } from "./menu";
 
 /** One canvas element positioned in virtual-desktop pixels. */
 class Sprite {
@@ -69,6 +70,25 @@ class Sprite {
 
 const PAD = 14;
 
+const CAN_KEY = "pesto.can";
+
+function recall(): { x: number; y: number } | null {
+  try {
+    const at = JSON.parse(localStorage.getItem(CAN_KEY) ?? "null");
+    return at && Number.isFinite(at.x) && Number.isFinite(at.y) ? at : null;
+  } catch {
+    return null;
+  }
+}
+
+function remember(at: { x: number; y: number }) {
+  try {
+    localStorage.setItem(CAN_KEY, JSON.stringify(at));
+  } catch {
+    // Without storage the can simply returns to its corner next time.
+  }
+}
+
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 const patterns = new Map<number, CanvasPattern | null>();
 
@@ -126,6 +146,7 @@ export class Stage {
   readonly director = new Director(this.world, this.actor, this.can);
 
   readonly paper: Paper;
+  readonly menu: Menu;
 
   private pesto: Sprite;
   private canBack: Sprite;
@@ -134,6 +155,7 @@ export class Stage {
   private wasSplit = false;
   private border = 1.5;
   private veil = 0;
+  private carry: { dx: number; dy: number } | null = null;
   private rest = 0;
   private ghost = 0;
 
@@ -147,7 +169,15 @@ export class Stage {
     this.canFront = new Sprite(root, Math.ceil(110 * cs) + PAD * 2, Math.ceil(110 * cs) + PAD * 2, 55 * cs + PAD, 103 * cs + PAD, 3);
     this.canFront.show(false);
     this.paper = new Paper(root);
+    this.menu = new Menu(root);
     this.world.on("monitors", () => this.placeCan());
+    this.world.on("mouseDown", (e) => {
+      const m = this.menu.rect;
+      const v = this.world.virtual;
+      if (m && !(e.x - v.x >= m.x && e.x - v.x <= m.x + m.w && e.y - v.y >= m.y && e.y - v.y <= m.y + m.h)) this.menu.close();
+      if (e.buttons & 1 && !m && this.overCan(e.x, e.y) && !this.overPesto(e.x, e.y)) this.carry = { dx: this.can.x - e.x, dy: this.can.y - e.y };
+    });
+    this.world.on("mouseUp", () => this.carry && this.setCanDown());
   }
 
   /** White sticker border around Pesto and the can, in character units. 0 removes it. */
@@ -160,18 +190,70 @@ export class Stage {
     this.canDirty = true;
   }
 
-  /** Stands the can in the bottom-right corner of the primary monitor. */
+  /** Stands the can where it was last put, or in the bottom-right corner of the primary monitor. */
   placeCan() {
     const m = this.world.primary;
     if (!m) return;
-    this.can.x = m.work.x + m.work.w - 150;
-    this.can.y = m.work.y + m.work.h;
+    const saved = recall();
+    if (saved && this.world.monitorAt(saved.x, saved.y - 20)) {
+      this.can.x = saved.x;
+      this.can.y = saved.y;
+    } else {
+      this.can.x = m.work.x + m.work.w - 150;
+      this.can.y = m.work.y + m.work.h;
+    }
     this.canDirty = true;
     if (this.actor.mode === "can") this.actor.vanish();
   }
 
+  /** True while the can is being carried by the mouse. */
+  get carrying() {
+    return this.carry != null;
+  }
+
+  /** Lets go of the can: it drops onto whatever ledge is under it and stays there from now on. */
+  private setCanDown() {
+    this.carry = null;
+    const { can, world } = this;
+    const ledge = world.ledgeBelow(can.x, can.y - 30, 30);
+    if (ledge) {
+      const half = 60 * can.scale;
+      can.x = Math.max(ledge.x1 + half, Math.min(ledge.x2 - half, can.x));
+      can.y = ledge.y;
+    } else {
+      const m = world.monitorAt(can.x, can.y - 20) ?? world.primary;
+      if (m) can.y = m.work.y + m.work.h;
+    }
+    can.shake(0.7);
+    this.actor.cue("clank");
+    this.canDirty = true;
+    remember({ x: can.x, y: can.y });
+  }
+
+  private overCan(x: number, y: number) {
+    const cs = this.can.scale;
+    return x > this.can.x - 50 * cs && x < this.can.x + 50 * cs && y > this.can.y - 125 * cs && y < this.can.y;
+  }
+
+  private overPesto(x: number, y: number) {
+    const hit = this.actor.hitRect;
+    return !!hit && !this.yielding && x > hit.x && x < hit.x + hit.w && y > hit.y && y < hit.y + hit.h;
+  }
+
+  /** The mouse cursor to show while it is over the overlay. */
+  get cursor(): string {
+    if (this.carrying || this.actor.mode === "held") return "grabbing";
+    const { x, y } = this.world.cursor;
+    return this.overPesto(x, y) || this.overCan(x, y) ? "grab" : "default";
+  }
+
   step(dt: number) {
     this.world.tick(dt);
+    if (this.carry) {
+      this.can.x = this.world.cursor.x + this.carry.dx;
+      this.can.y = this.world.cursor.y + this.carry.dy;
+      this.canDirty = true;
+    }
     this.can.update(dt);
     this.director.update(dt);
     this.actor.update(dt);
@@ -297,6 +379,8 @@ export class Stage {
     const cs = this.can.scale;
     regions.push({ x: this.can.x - 50 * cs, y: this.can.y - 125 * cs, w: 100 * cs, h: 125 * cs });
     for (const bar of this.bars()) regions = regions.flatMap((r) => without(r, bar));
+    const m = this.menu.rect;
+    if (m) regions.push({ x: m.x + this.world.virtual.x, y: m.y + this.world.virtual.y, w: m.w, h: m.h });
     return regions;
   }
 }

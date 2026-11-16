@@ -158,6 +158,9 @@ export class Director {
   onPerform: ((name: ReactionName, args: ReactionArgs) => void) | null = null;
 
   private attentive = false;
+  private grabbedAt = -Infinity;
+  private grabs = 0;
+  private grabSound = "";
   private idleIn = rand(2, 5);
   private outFor = 0;
   private loudFor = 0;
@@ -171,7 +174,7 @@ export class Director {
     const a = actor;
     a.on("poked", () => void this.perform("swat"));
     a.on("petted", () => a.cue("chitter"));
-    a.on("grabbed", () => a.cue("squeak"));
+    a.on("grabbed", () => this.onGrabbed());
     a.on("dropped", ({ onLedge }) => {
       a.feel(onLedge ? "curious" : "strained", 1.6);
       if (onLedge) void a.run(this.inspectGround());
@@ -213,6 +216,23 @@ export class Director {
         else if (a.mode === "ground" && (!a.busy || a.sitting)) void this.perform("startle");
       }
     });
+  }
+
+  /**
+   * Being picked up surprises him the first time. Do it again soon after and
+   * he gets used to it, then tired of it, and mostly stops making a sound.
+   */
+  private onGrabbed() {
+    const a = this.actor;
+    const now = this.world.time;
+    this.grabs = now - this.grabbedAt < 30 ? this.grabs + 1 : 0;
+    this.grabbedAt = now;
+    const moods = this.grabs === 0 ? (["surprised", "unsure", "curious"] as const) : this.grabs < 3 ? (["unsure", "annoyed", "sleepy"] as const) : (["annoyed", "grumpy", "glare"] as const);
+    a.feel(pick(moods), rand(1.8, 3));
+    if (!chance(this.grabs === 0 ? 0.6 : 0.22)) return;
+    const sounds = (this.grabs === 0 ? ["eep", "huh", "gasp"] : ["huh", "grumble"]).filter((s) => s !== this.grabSound);
+    this.grabSound = pick(sounds);
+    a.cue(this.grabSound);
   }
 
   /**

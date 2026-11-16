@@ -12,7 +12,7 @@ if (!file) {
 const port = process.env.PESTO_DEBUG_PORT ?? "9333";
 const speech = fs.readFileSync(file).toString("base64");
 
-async function inPage(speech) {
+async function inPage(speech, width) {
   const { Hrirs } = await import("/src/voice/hrir.ts");
   const { Spatializer, seenFromChair } = await import("/src/voice/space.ts");
   const { smallBody } = await import("/src/voice/eleven.ts");
@@ -41,7 +41,8 @@ async function inPage(speech) {
     source.start(0.05);
     for (const [t, point, muffled] of steps) {
       const aim = () => {
-        const seen = seenFromChair(point, screen);
+        const seen = seenFromChair(point, screen, width);
+        space.spread = width;
         space.aim(seen.azimuth, seen.elevation, seen.metres, muffled);
       };
       if (t === 0) aim();
@@ -73,7 +74,7 @@ ws.send(
   JSON.stringify({
     id: 1,
     method: "Runtime.evaluate",
-    params: { expression: `(${inPage})(${JSON.stringify(speech)})`, awaitPromise: true, returnByValue: true },
+    params: { expression: `(${inPage})(${JSON.stringify(speech)}, pesto.config.voice.width)`, awaitPromise: true, returnByValue: true },
   }),
 );
 ws.onmessage = (m) => {

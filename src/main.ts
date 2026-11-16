@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Decider } from "./brain/decider";
 import { Journal } from "./brain/journal";
 import { Mind } from "./brain/mind";
-import { loadConfig } from "./config";
+import { loadConfig, saveConfig } from "./config";
 import { connectSenses, holdInteractive, setHitRegions } from "./sense/bridge";
 import { Stage } from "./stage/stage";
 import { createVoice } from "./voice/create";
@@ -35,8 +35,8 @@ director.onPerform = (name) => {
   if (!mind.busy && name !== "glance" && name !== "emote") journal.add("pesto", `did: ${name}`);
 };
 
-// The hotkey or the tray asks for the text box; it opens above his head and he listens.
-await listen("ask://open", () => {
+// The hotkey, the tray or his menu asks for the text box; it opens above his head and he listens.
+function openAsk() {
   const crown = stage.crown;
   const screen = world.monitorAt(crown.x, crown.y + 40)?.work;
   const x = screen ? Math.max(screen.x + 200, Math.min(screen.x + screen.w - 200, crown.x)) : crown.x;
@@ -44,7 +44,65 @@ await listen("ask://open", () => {
   void invoke("ask_show", { x: Math.round(x), y: Math.round(y) });
   mind.interrupt();
   director.listen(true);
+}
+await listen("ask://open", openAsk);
+
+window.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  const v = world.virtual;
+  const scale = window.devicePixelRatio;
+  const out = actor.mode !== "can";
+  const toggle = (label: string, on: boolean, set: (on: boolean) => void) => ({ label, checked: on, action: () => set(!on) });
+  stage.menu.open(e.clientX * scale, e.clientY * scale, offset(world.monitorAt(world.cursor.x, world.cursor.y)?.rect, v), [
+    { label: "Talk…", action: openAsk },
+    { label: out ? "Go home" : "Come out", action: () => void director.perform(out ? "goHome" : "comeOut") },
+    {
+      ...toggle("Voice", !config.voice.muted, (on) => {
+        config.voice.muted = !on;
+        saveConfig({ voice: { muted: !on } });
+      }),
+      divide: true,
+    },
+    {
+      label: "Volume",
+      slide: {
+        value: config.voice.volume,
+        set: (volume) => {
+          config.voice.volume = volume;
+          saveConfig({ voice: { volume } });
+        },
+      },
+    },
+    {
+      label: "Width",
+      slide: {
+        value: config.voice.width,
+        set: (width) => {
+          config.voice.width = width;
+          saveConfig({ voice: { width } });
+        },
+      },
+    },
+    toggle("Captions", config.voice.captions, (on) => {
+      config.voice.captions = on;
+      saveConfig({ voice: { captions: on } });
+    }),
+    toggle("Reactions", config.decider.enabled, (on) => {
+      config.decider.enabled = on;
+      saveConfig({ decider: { enabled: on } });
+    }),
+    toggle("Sticker border", stage.stickerBorder > 0, (on) => {
+      stage.stickerBorder = config.body.border = on ? 1.5 : 0;
+      saveConfig({ body: { border: config.body.border } });
+    }),
+    { label: "Edit settings…", divide: true, action: () => void invoke("config_open") },
+    { label: "Quit", action: () => void invoke("app_quit") },
+  ]);
 });
+
+function offset(rect: { x: number; y: number; w: number; h: number } | undefined, by: { x: number; y: number }) {
+  return rect ? { x: rect.x - by.x, y: rect.y - by.y, w: rect.w, h: rect.h } : null;
+}
 await listen("ask://closed", () => {
   // After a message he is about to answer, so the lid stays up until he has.
   if (!mind.busy) director.listen(false);
@@ -61,7 +119,8 @@ function frame(t: number) {
   stage.render();
   voice.place(actor.visible ? actor.toWorld(actor.puppet.anchors?.mouth ?? { x: 0, y: -110 }) : stage.crown, !actor.visible);
   setHitRegions(stage.hitRegions());
-  holdInteractive(actor.mode === "held");
+  holdInteractive(actor.mode === "held" || stage.carrying);
+  if (document.body.style.cursor !== stage.cursor) document.body.style.cursor = stage.cursor;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

@@ -47,6 +47,31 @@ pub fn config_load(app: AppHandle) -> Result<serde_json::Value, String> {
     read(&app)
 }
 
+fn merge(into: &mut serde_json::Value, patch: serde_json::Value) {
+    match (into, patch) {
+        (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
+            for (k, v) in b {
+                merge(a.entry(k).or_insert(serde_json::Value::Null), v);
+            }
+        }
+        (slot, v) => *slot = v,
+    }
+}
+
+/// Merges `patch` into config.json, leaving every other key as it was.
+#[tauri::command]
+pub fn config_patch(app: AppHandle, patch: serde_json::Value) -> Result<(), String> {
+    let mut config = read(&app)?;
+    merge(&mut config, patch);
+    let text = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    fs::write(config_path(&app)?, text + "\n").map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn config_open(app: AppHandle) {
+    open_in_editor(&app);
+}
+
 pub fn open_in_editor(app: &AppHandle) {
     match config_path(app) {
         Ok(path) => {

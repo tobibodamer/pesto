@@ -74,6 +74,8 @@ export class Spatializer {
   private ring: GainNode;
   private distance: GainNode;
   private muffled = false;
+  /** Scales how far to the side of him the early bounces arrive from, 0..1. */
+  spread = 1;
 
   constructor(
     private ctx: BaseAudioContext,
@@ -129,7 +131,7 @@ export class Spatializer {
   aim(azimuth: number, elevation: number, metres: number, muffled: boolean) {
     const t = this.ctx.currentTime;
     this.direct.aim(azimuth, elevation);
-    for (const b of this.bounces) b.arrival.aim(azimuth + b.az, elevation + b.el);
+    for (const b of this.bounces) b.arrival.aim(azimuth + b.az * this.spread, elevation + b.el);
 
     // Level falls off gently: he is small and near, and should stay intelligible on the far monitor.
     this.distance.gain.setTargetAtTime(Math.min(1.15, Math.pow(0.7 / Math.max(0.35, metres), 0.6)), t, 0.08);
@@ -143,7 +145,7 @@ export class Spatializer {
   }
 }
 
-/** A very short, dull, decorrelated tail: the air around a desk, not a room. */
+/** A very short, dull tail: the air around a desk, not a room. */
 function roomTail(ctx: BaseAudioContext): AudioBuffer {
   const sr = ctx.sampleRate;
   const length = Math.floor(sr * 0.12);
@@ -151,11 +153,14 @@ function roomTail(ctx: BaseAudioContext): AudioBuffer {
   const buf = ctx.createBuffer(2, length, sr);
   for (let ch = 0; ch < 2; ch++) {
     const out = buf.getChannelData(ch);
-    let seed = ch ? 0x9e3779b9 : 0x85ebca6b;
+    let shared = 0x85ebca6b;
+    let own = ch ? 0x9e3779b9 : 0x27d4eb2f;
     let low = 0;
     for (let i = start; i < length; i++) {
-      seed = (Math.imul(seed, 1664525) + 1013904223) | 0;
-      low += ((seed / 2147483648) - low) * 0.35;
+      shared = (Math.imul(shared, 1664525) + 1013904223) | 0;
+      own = (Math.imul(own, 1664525) + 1013904223) | 0;
+      // Mostly the same in both ears: a fully decorrelated tail wraps around the head instead of sitting in front.
+      low += ((0.8 * shared + 0.2 * own) / 2147483648 - low) * 0.35;
       const t = (i - start) / sr;
       out[i] = low * Math.exp(-t * 60) * 0.045;
     }
@@ -182,19 +187,28 @@ function canRing(ctx: BaseAudioContext): AudioBuffer {
   return buf;
 }
 
-/** Where a point on the screens is, as seen from the chair. Pixels in, degrees and metres out. */
-export function seenFromChair(point: { x: number; y: number }, primary: { x: number; y: number; w: number; h: number } | null) {
+/** How much of the heard angle survives on the main screen; past its edges the full `width` slope takes over. */
+const MAIN_SCREEN_KEEP = 0.4;
+
+/**
+ * Where a point on the screens is, as heard from the chair. Pixels in, degrees and metres out.
+ * `width` scales the true angles down: over headphones they sound wider than the screen looks.
+ * Across the main screen they are narrowed further, so there he stays in front of you.
+ */
+export function seenFromChair(point: { x: number; y: number }, primary: { x: number; y: number; w: number; h: number } | null, width: number) {
   const screen = primary ?? { x: 0, y: 0, w: 1920, h: 1080 };
   // A 24-inch monitor at arm's length; other sizes scale with it closely enough.
   const metresPerPixel = 0.53 / screen.w;
   const away = 0.65;
   const dx = (point.x - (screen.x + screen.w / 2)) * metresPerPixel;
   const dy = (screen.y + screen.h * 0.4 - point.y) * metresPerPixel;
-  // Heard angles are pulled in from the seen ones: over headphones the true angle sounds wider than the screen looks.
-  const narrow = 0.62;
+  const deg = (rad: number) => (rad * 180) / Math.PI;
+  const edge = deg(Math.atan2(screen.w * 0.5 * metresPerPixel, away));
+  const az = deg(Math.atan2(dx, away));
+  const heard = Math.abs(az) <= edge ? az * MAIN_SCREEN_KEEP : Math.sign(az) * (edge * MAIN_SCREEN_KEEP + Math.abs(az) - edge);
   return {
-    azimuth: ((Math.atan2(dx, away) * 180) / Math.PI) * narrow,
-    elevation: ((Math.atan2(dy, Math.hypot(dx, away)) * 180) / Math.PI) * narrow,
+    azimuth: heard * width,
+    elevation: deg(Math.atan2(dy, Math.hypot(dx, away))) * width,
     metres: Math.hypot(dx, dy, away),
   };
 }

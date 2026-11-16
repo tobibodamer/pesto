@@ -36,6 +36,10 @@ export interface Config {
     volume: number;
     /** Show what he says as a speech bubble too. Always on when there is no voice. */
     captions: boolean;
+    /** Keeps the voice configured but silent; he falls back to speech bubbles. */
+    muted: boolean;
+    /** How far to the sides he is heard, 0..1: 0 is always straight ahead, 1 is the true angle to where he stands. */
+    width: number;
   };
   body: {
     /** Pixels per character unit; he is about 150 units tall. */
@@ -48,8 +52,8 @@ export interface Config {
 export const DEFAULTS: Config = {
   mind: { baseUrl: "", apiKey: "", model: "", temperature: 0.9, reasoningEffort: "low", quietSeconds: 240 },
   decider: { enabled: true, baseUrl: "http://triton:11434", model: "d1:2b-q8_0", speakAbove: 0.72 },
-  voice: { provider: "none", apiKey: "", voiceId: "", model: "eleven_v4_turbo", stability: 0.35, volume: 0.9, captions: false },
-  body: { scale: 0.8, border: 1.5 },
+  voice: { provider: "none", apiKey: "", voiceId: "", model: "eleven_v4_turbo", stability: 0.35, volume: 0.9, captions: false, muted: false, width: 0.3 },
+  body: { scale: 0.8, border: 0 },
 };
 
 function merge<T>(base: T, patch: unknown): T {
@@ -70,4 +74,11 @@ export async function loadConfig(): Promise<Config> {
     console.warn("config: using defaults", err);
     return structuredClone(DEFAULTS);
   }
+}
+
+type Patch<T> = { [K in keyof T]?: T[K] extends object ? Patch<T[K]> : T[K] };
+
+/** Writes changed settings back to config.json; keys not mentioned are left alone. */
+export function saveConfig(patch: Patch<Config>) {
+  void invoke("config_patch", { patch }).catch((err) => console.warn("config: not saved", err));
 }
