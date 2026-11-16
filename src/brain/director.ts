@@ -93,11 +93,23 @@ export const REACTIONS = {
     },
   },
   snore: {
-    describe: "Snore inside the can, the lid lifting a little with each breath.",
+    describe: "Doze off inside the can and sleep there a while, snoring, the lid lifting a little with each breath.",
     run: function* (d, args) {
       if (d.actor.mode !== "can") return;
+      if (!d.asleep) {
+        d.can.shake(0.35);
+        d.actor.cue("rustle");
+        yield* wait(rand(1.5, 2.5));
+        if (chance(0.6)) {
+          d.actor.cue(pick(MUTTERS));
+          d.can.shake(0.1);
+          yield* wait(2);
+        }
+        yield* wait(rand(4, 8));
+        d.fallAsleep(args.seconds);
+      }
       try {
-        for (let left = args.seconds ?? 7; left > 0; left -= 2.6) {
+        for (let left = rand(10, 20); left > 0; left -= 2.6) {
           d.actor.cue("snore");
           d.can.lid = 0.05;
           yield* wait(1.1);
@@ -311,6 +323,11 @@ export class Director {
   private watchingTyping = false;
   private lastCaretAt = -Infinity;
   private clockIn = 0;
+  private inCanFor = 0;
+  /** When he wakes up on his own, while he sleeps in the can. */
+  private asleepUntil: number | null = null;
+  /** He does not doze off again before this, after he woke up. */
+  private wakefulUntil = 0;
 
   constructor(
     readonly world: World,
@@ -370,7 +387,7 @@ export class Director {
       const x = w.rect.x + w.rect.w / 2;
       const y = w.rect.y + 24;
       if (a.mode === "can") {
-        if (this.autonomous && !a.busy && chance(0.3)) void this.perform("peek", { target: { x, y }, seconds: rand(1.5, 3) });
+        if (this.autonomous && !a.busy && !this.asleep && chance(0.3)) void this.perform("peek", { target: { x, y }, seconds: rand(1.5, 3) });
       } else if (!a.busy || a.sitting) {
         a.lookAt(x, y, 1.4);
       }
@@ -395,7 +412,10 @@ export class Director {
     world.on("audio", ({ now, before }) => {
       if (now > 0.62 && before < 0.12 && this.loudFor <= 0) {
         this.loudFor = 4;
-        if (a.mode === "can") this.can.shake(0.9);
+        if (a.mode === "can") {
+          this.wake();
+          this.can.shake(0.9);
+        }
         else if (a.mode === "ground" && (!a.busy || a.sitting)) void this.perform("startle");
       }
     });
@@ -427,6 +447,7 @@ export class Director {
     this.attentive = on;
     if (on) {
       a.stop();
+      this.wake();
       this.listenedFor = 0;
       this.faceFor = 0;
       this.jolted = !!opts.called;
@@ -474,6 +495,7 @@ export class Director {
   perform(name: ReactionName, args: ReactionArgs = {}): Promise<boolean> {
     const reaction: Reaction = REACTIONS[name];
     const d = this;
+    if (name !== "snore") this.wake();
     this.onPerform?.(name, args);
     if (reaction.now) {
       reaction.now(this, args);
@@ -589,6 +611,43 @@ export class Director {
     return { ledge, x: rand(x1, x2) };
   }
 
+  get asleep() {
+    return this.asleepUntil != null;
+  }
+
+  /** From now on he sleeps in the can, for a while or for `seconds`, until something wakes him. */
+  fallAsleep(seconds = rand(90, 240)) {
+    this.asleepUntil = this.world.time + seconds;
+  }
+
+  private wake() {
+    if (this.asleepUntil == null) return;
+    this.asleepUntil = null;
+    this.wakefulUntil = this.world.time + rand(120, 300);
+  }
+
+  /** Waking up on his own: a snort, then he stirs and grumbles before he is properly awake. */
+  private *wakeUp(): Routine {
+    const { actor: a, can } = this;
+    this.wake();
+    try {
+      a.cue("snort");
+      can.lid = 0.08;
+      yield* wait(0.4);
+      can.lid = 0;
+      yield* wait(rand(1.5, 3));
+      can.shake(0.6);
+      a.cue("rustle");
+      yield* wait(1.2);
+      if (chance(0.5)) {
+        a.cue(pick(MUTTERS));
+        yield* wait(1.8);
+      }
+    } finally {
+      can.lid = 0;
+    }
+  }
+
   /** Out long enough, or sleepy enough, to make himself comfortable instead of sitting up straight. */
   get relaxed() {
     return this.loudFor <= 0 && (this.outFor > 30 || this.actor.mood === "sleepy");
@@ -624,8 +683,14 @@ export class Director {
       a.mood = night ? "sleepy" : "neutral";
       a.puppet.hat = night ? "nightcap" : null;
     }
-    if (a.mode !== "can") this.outFor += dt;
-    else this.outFor = 0;
+    if (a.mode !== "can") {
+      this.outFor += dt;
+      this.inCanFor = 0;
+      this.wake();
+    } else {
+      this.outFor = 0;
+      this.inCanFor += dt;
+    }
 
     // Sliding down the glass past an edge: usually he grabs it.
     if (a.mode === "glass" && a.sliding && !a.busy && this.world.time > this.catchAfter) {
@@ -671,11 +736,26 @@ export class Director {
 
     const away = this.world.system.idleMs > 4 * 60_000;
     if (a.mode === "can") {
+      const settled = this.inCanFor > 40 && this.world.time > this.wakefulUntil;
+      if (away) {
+        // Nobody to hear him: he naps, and does not wake before they are back.
+        this.idleIn = rand(7, 22);
+        if (!this.asleep && settled) this.fallAsleep();
+        return;
+      }
+      if (this.asleep) {
+        this.idleIn = rand(1, 4);
+        if (this.world.time >= this.asleepUntil!) void a.run(this.wakeUp());
+        else void this.perform("snore");
+        return;
+      }
       this.idleIn = rand(7, 22);
-      if (away) return;
+      if (settled && chance(a.mood === "sleepy" ? 0.4 : 0.08)) {
+        void this.perform("snore");
+        return;
+      }
       const roll = rand(0, 1);
-      if (a.mood === "sleepy" && roll < 0.3) void this.perform("snore");
-      else if (roll < 0.32) void this.perform("peek", { target: "cursor" });
+      if (roll < 0.32) void this.perform("peek", { target: "cursor" });
       else if (roll < 0.44) void this.perform("lookOut");
       else if (roll < 0.51) void this.perform("rustle");
       else if (roll < 0.56) void this.perform("chew");

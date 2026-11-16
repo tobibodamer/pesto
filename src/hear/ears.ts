@@ -127,6 +127,7 @@ export class Ears {
     this.nameless = 0;
     const wasTalking = actor.talking;
     const again = this.listening;
+    const woke = director.asleep;
     // Asked before anything else so the answer is there by the time it is needed.
     const take = decider.called();
 
@@ -142,7 +143,7 @@ export class Ears {
     if (taken?.feeling && taken.feeling !== "neutral") actor.feel(taken.feeling, 600);
     // A sound only into silence: never over them, and not right after being cut off.
     if (director.hearing.speaking || wasTalking || again) return;
-    const sound = taken ? taken.sound : actor.mood === "sleepy" ? "grumble" : "huh";
+    const sound = taken ? taken.sound : woke || actor.mood === "sleepy" ? "grumble" : "huh";
     if (sound) actor.cue(sound);
   }
 

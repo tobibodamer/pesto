@@ -358,7 +358,7 @@ export class Decider {
     const state = [
       WHO,
       journal.brief(),
-      actor.mode === "can" ? "Pesto was hidden inside his can." : actor.busy ? "Pesto was out of his can, in the middle of something." : "Pesto was out of his can, doing nothing much.",
+      this.deps.director.asleep ? "Pesto was asleep inside his can." : actor.mode === "can" ? "Pesto was hidden inside his can." : actor.busy ? "Pesto was out of his can, in the middle of something." : "Pesto was out of his can, doing nothing much.",
       Number.isFinite(mind.lastSpokeAt) ? `He last spoke ${Math.round((this.deps.now() - mind.lastSpokeAt) / 60)} min ago.` : "He has not spoken yet today.",
       `It is ${hour}:00. The person just said his name out loud.`,
     ].join("\n");
