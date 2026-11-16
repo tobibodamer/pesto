@@ -25,7 +25,7 @@ In order. Each step leaves the app in a runnable state.
 - Triton serves the decision model with about 500 tokens of context per request, so the decider sees only a few journal lines. Raising `OLLAMA_CONTEXT_LENGTH` (or lowering `OLLAMA_NUM_PARALLEL`) on Triton would let it see more.
 - The ElevenLabs plan allows three requests at once and no PCM output; lines are fetched as MP3, two at a time.
 - Window titles go to the talking model as they are, including anything private in them. There is no filter yet. The same goes for the names of buttons, tabs and on-screen text in a window he looks into: chat names, file names.
-- The model sometimes invents directions; unknown ones are skipped silently.
+- The model sometimes invents directions and targets; they are skipped, with a line in the debug trace.
 - The generated sounds in `public/sfx` have not been listened to.
 
 ## Architecture
@@ -43,7 +43,7 @@ In order. Each step leaves the app in a runnable state.
 | Journal: debounced activity log and desktop snapshot for the model | `src/brain/journal.ts` | ✅ |
 | Decider: small local model picks silent reactions and when to wake the mind | `src/brain/decider.ts` | ✅ decisions live; the pestering ladder is untested |
 | Mind: streaming OpenAI-compatible chat that writes a performance script | `src/brain/mind.ts`, `persona.ts` | ✅ |
-| Performance script: speech and `<direction/>` tags interleaved on a voice track and a body track | `src/brain/script.ts`, `performance.ts` | ✅ live, no tests |
+| Performance script: speech and `<direction/>` tags interleaved on a voice track and a body track | `src/brain/script.ts`, `performance.ts` | ✅ live and tested |
 | Sight: what is inside a window, fetched only when the model asks, so a wake carries titles and nothing more | `src-tauri/src/sense/elements.rs`, `src/sense/sight.ts`, `src/brain/tools.ts` | 🟡 |
 | Voice: ElevenLabs speech, binaural renderer on measured KU100 responses, generated sounds, silent captions fallback | `src/voice/`, `public/hrir`, `public/sfx` | 🟡 works, not yet tuned by ear |
 | Config file and tray menu (Settings, Quit) | `src-tauri/src/config.rs`, `src/config.ts` | 🟡 |
@@ -169,7 +169,7 @@ In order. Each step leaves the app in a runnable state.
 | Go there, tap twice, look back | 🟡 `<tap at="…"/>`, `tap` in the director. He picks the nearest ledge he can reach the spot from; with none, he climbs the glass to it, clings, taps, and slides down when his grip goes. Seen in `film:tap` and `film:cling`, and once live on a VS Code button. A fingertip is exact with his arm straight and a few pixels off with it bent |
 | Paper ball thrown at the exact spot | 🟡 `<throw at="…"/>`. It flies over every ledge, bounces off the spot, then falls and lies about like other junk. Seen in `film:throw`, not live. It borrows the "swat" and "land" sounds |
 | Bent straw pointer | 🟡 not a direction of its own: `tap` and `point` use it whenever the spot is further than his finger and within about 115 units of his shoulder. The tip sits exactly on the spot. Seen in `film:tap` |
-| A ring spreading from the spot he touched (finger, straw or ball) | 🟡 `src/stage/ping.ts`, not seen live |
+| A ring spreading from the spot he touched (finger, straw or ball) | ✅ `src/stage/ping.ts` |
 | Cardboard signs | ✅ |
 | Notes slid from under the lid | 🟡 |
 | Cards: crumpled sheet smoothed on the glass into a document or small UI | ⬜ |
@@ -257,13 +257,13 @@ In order. Each step leaves the app in a runnable state.
 
 | Behaviour | State |
 |---|---|
-| Petting | ✅ headless, 🟡 live |
-| Poke, swat | ✅ headless, 🟡 live |
-| Scruff grab, limp, looks at what he is over | ✅ headless, 🟡 live |
+| Petting | ✅ headless |
+| Poke, swat | ✅ headless |
+| Scruff grab, limp, looks at what he is over | ✅ |
 | Being picked up: surprised at first, resigned then fed up when it keeps happening; a sound only sometimes, never the same twice | 🟡 sounds unheard |
-| Hand cursor over him and the can, closed hand while carrying | 🟡 written, not seen |
-| Drop: sit on a ledge, otherwise cling and slide | ✅ headless, 🟡 live |
-| Shake dizzy, throw tumble and glare | ✅ headless, 🟡 live |
+| Hand cursor over him and the can, closed hand while carrying | ✅ |
+| Drop: sit on a ledge, otherwise cling and slide | ✅ |
+| Shake dizzy, throw tumble and glare | ✅ |
 | Drag a file onto him | ⬜ |
 | High five | ⬜ |
 
@@ -325,7 +325,7 @@ When a video or game takes the whole screen he is no longer on the desktop in fr
 |---|---|
 | `vite build` inputs (overlay and ask box) | 🟡 fixed, build not run |
 | Privacy filter for window titles before they reach the model | ⬜ |
-| Tests for the script parser and the performance player | ⬜ |
+| Tests for the script parser and the performance player | ✅ `pnpm test` (Vitest), in `src/brain/*.test.ts` next to what they test. The player runs against a voice and a director that start and finish only when the test says so |
 | `CLAUDE.md` for agents working in the repo | ⬜ |
 | Right-click menu on him or the can: Talk, Go home / Come out, Voice, Volume, Width, Sounds, Ears, Captions, Reactions, Sticker border, Debug, Settings, Quit. Switches are saved to config.json | ✅ |
 | Sounds apart from the voice: their own switch and volume, playing without a voice provider, plus a volume for each group (reactions, breathing, can, bumps) in Settings → Sounds. Groups are set in `SOUNDS` in `src/voice/eleven.ts` | 🟡 not tried in the app |
@@ -350,6 +350,7 @@ node dev/shoot.mjs film:groom film:lounge film:rim film:junk    the idle moves
 node dev/shoot.mjs film:tap film:cling film:throw               pointing things out; a cross marks each spot he touched
 node dev/shoot.mjs film:dash@1800x1680 film:bound@1800x1920     getting there in a hurry, frame by frame
 pnpm typecheck
+pnpm test                                  the script parser and the performance player
 ```
 
 `PESTO_SENSE_LOG=1` prints sense event counts. Through poke or the overlay's devtools, `pesto.say("…")` talks to him, `pesto.director.perform("dance")` plays a reaction, `pesto.director.perform("tap", { target: "cursor" })` (or `"throw"`, `"point"`) shows a spot, `pesto.sight.look(pesto.world.foreground)` lists what he can see in a window, `pesto.decider.last` shows the last silent decision. Debug in his menu (`debug.panel`) draws a live trace in the corner of his screen: every request to the decision model with its time and likeliest answers, what his ears heard, why he did or did not react while listening, and the route of each dash. The same lines go to the console and `pesto.trace.lines`.

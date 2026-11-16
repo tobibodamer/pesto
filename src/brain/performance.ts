@@ -1,3 +1,4 @@
+import { trace } from "../debug/trace";
 import type { Actor } from "../pesto/actor";
 import { EMOTIONS, type Emotion } from "../pesto/pose";
 import type { Sight } from "../sense/sight";
@@ -131,10 +132,13 @@ export class Performance {
     }
 
     const reaction = (ALIASES[name] ?? name) as ReactionName;
-    if (!(reaction in REACTIONS)) return;
+    if (!(reaction in REACTIONS)) return trace.log("script", `no such direction: ${name}`);
     const emotion = a.as && a.as in EMOTIONS ? (a.as as Emotion) : undefined;
+    const where = a.at ?? a.to;
+    const target = this.target(where);
+    if (where && !target) trace.log("script", `${name}: nothing known as "${where}"`);
     this.did.push(this.describe(name, a));
-    await director.perform(reaction, { target: this.target(a.at ?? a.to), emotion, seconds });
+    await director.perform(reaction, { target, emotion, seconds });
   }
 
   /** A direction as a line for the journal, with the things he saw named instead of numbered. */
