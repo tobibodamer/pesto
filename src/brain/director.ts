@@ -164,6 +164,8 @@ export class Director {
   private idleIn = rand(2, 5);
   private outFor = 0;
   private loudFor = 0;
+  /** Until when a slide down the glass will not try to catch an edge again. */
+  private catchAfter = 0;
   /** Whether he watches the current burst of typing; decided afresh for each burst. */
   private watchingTyping = false;
   private lastCaretAt = -Infinity;
@@ -179,6 +181,11 @@ export class Director {
     a.on("petted", () => a.cue("chitter"));
     a.on("grabbed", () => this.onGrabbed());
     a.on("dropped", ({ onLedge }) => {
+      const edge = onLedge ? null : moves.edgeToHang(a);
+      if (edge) {
+        void a.run(moves.hangFrom(a, edge));
+        return;
+      }
       a.feel(onLedge ? "curious" : "strained", 1.6);
       if (onLedge) void a.run(this.inspectGround());
     });
@@ -373,6 +380,15 @@ export class Director {
     }
     if (a.mode !== "can") this.outFor += dt;
     else this.outFor = 0;
+
+    // Sliding down the glass past an edge: usually he grabs it.
+    if (a.mode === "glass" && a.sliding && !a.busy && this.world.time > this.catchAfter) {
+      const edge = moves.edgeToHang(a, 24, 0);
+      if (edge) {
+        this.catchAfter = this.world.time + 1;
+        if (chance(0.7)) void a.run(moves.hangFrom(a, edge));
+      }
+    }
 
     if (!this.autonomous || this.attentive || a.busy || a.mode === "held" || a.mode === "air" || a.mode === "glass") return;
     if ((this.idleIn -= dt) > 0) return;

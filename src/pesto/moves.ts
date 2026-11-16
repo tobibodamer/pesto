@@ -806,3 +806,72 @@ function drawSign(ctx: CanvasRenderingContext2D, x: number, y: number, text: str
   ctx.fillText(text, 0, -88);
   ctx.restore();
 }
+
+/** How far above his feet his hands are while he hangs from an edge, in character units. */
+const HANG_REACH = 84;
+
+/**
+ * An edge he could catch with his hands from where he is: one spanning his
+ * position, from `above` over his hands to `below` under them.
+ */
+export function edgeToHang(a: Actor, above = 70, below = 40): Ledge | null {
+  const hands = a.y - HANG_REACH * a.scale;
+  let best: Ledge | null = null;
+  for (const l of a.world.ledges) {
+    if (a.x < l.x1 + 12 || a.x > l.x2 - 12) continue;
+    const d = l.y - hands;
+    if (d < -above * a.scale || d > below * a.scale) continue;
+    if (!best || Math.abs(d) < Math.abs(best.y - hands)) best = l;
+  }
+  return best;
+}
+
+/** Catches an edge with both hands and hangs there, legs kicking, then pulls himself up or lets go. */
+export function* hangFrom(a: Actor, ledge: Ledge): Routine {
+  const s = a.scale;
+  const x = clamp(a.x, ledge.x1 + 14, ledge.x2 - 14);
+  const fromY = a.y;
+  const hangY = ledge.y + HANG_REACH * s;
+  a.stick(9);
+  a.gripLocked = true;
+  a.feel("surprised", 0.6);
+  const relaxed = a.mood === "sleepy";
+  let k = 0;
+  a.gesture = (p, dt) => {
+    k += dt;
+    const kick = relaxed ? Math.sin(k * 3) * 3 : Math.sin(k * 13) * 6;
+    p.handLX = -17;
+    p.handLY = -88;
+    p.handRX = 17;
+    p.handRY = -88;
+    p.footLX = -10 + kick;
+    p.footRX = 10 - kick;
+    p.footLY = 5;
+    p.footRY = 5;
+    p.squash = -0.1;
+  };
+  yield* tween(0.14, (u) => {
+    a.x = lerp(a.x, x, u);
+    a.y = lerp(fromY, hangY, easeOut(u));
+  });
+  const gone = () => a.world.ledge(ledge.id) == null;
+  const hang = relaxed ? rand(4, 8) : rand(1.2, 3.5);
+  yield* until(gone, hang * 0.5);
+  if (!gone() && chance(0.6)) a.look({ kind: "user" }, 1.2);
+  yield* until(gone, hang * 0.5);
+
+  const edge = a.world.ledge(ledge.id);
+  if (edge && chance(relaxed ? 0.5 : 0.75)) {
+    a.feel("strained", 0.8);
+    yield* tween(0.45, (u) => (a.y = lerp(hangY, edge.y, easeInOut(u))));
+    a.gesture = null;
+    a.place(edge, a.x);
+    yield* wait(0.25);
+    return;
+  }
+  // Lets go.
+  a.gesture = null;
+  a.gripLocked = false;
+  a.feel(edge ? "unsure" : "scared", 0.8);
+  a.launch(0, 0);
+}

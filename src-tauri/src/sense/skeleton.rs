@@ -15,8 +15,8 @@ use windows::Win32::UI::Accessibility::{
 use super::types::Rect;
 
 /// Keeps a scan cheap on huge trees (browsers, Electron): it stops at whichever limit comes first.
-const MAX_DEPTH: usize = 6;
-const MAX_NODES: usize = 300;
+const MAX_DEPTH: usize = 8;
+const MAX_NODES: usize = 500;
 const MAX_TIME: Duration = Duration::from_millis(150);
 const MIN_W: i32 = 100;
 const MIN_H: i32 = 16;
