@@ -1,5 +1,6 @@
 mod ask;
 mod config;
+mod hear;
 mod overlay;
 mod sense;
 
@@ -74,6 +75,10 @@ pub fn run() {
             config::config_load,
             config::config_patch,
             config::config_open,
+            hear::hear_enable,
+            hear::hear_listen,
+            hear::hear_stop,
+            hear::hear_feed,
             sense_snapshot,
             sense::skeleton::window_skeleton,
             overlay_set_hit_regions,
@@ -125,6 +130,8 @@ pub fn run() {
                 Arc::clone(&sense_state),
                 virtual_rect,
             )?;
+
+            app.manage(hear::start(app.handle(), Arc::clone(&sense_state)));
 
             let handles = start_sense(app.handle().clone(), Arc::clone(&sense_state), hwnd);
             if let Ok(mut guard) = app.state::<RuntimeHandles>().0.lock() {

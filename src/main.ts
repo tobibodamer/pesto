@@ -4,6 +4,7 @@ import { Decider } from "./brain/decider";
 import { Journal } from "./brain/journal";
 import { Mind } from "./brain/mind";
 import { loadConfig, saveConfig } from "./config";
+import { Ears } from "./hear/ears";
 import { connectSenses, holdInteractive, setHitRegions } from "./sense/bridge";
 import { Surveyor } from "./sense/skeleton";
 import { Stage } from "./stage/stage";
@@ -29,6 +30,8 @@ const voice = createVoice(config, world);
 const journal = new Journal(world, actor);
 const mind = new Mind({ config, journal, director, actor, voice, paper, now });
 const decider = new Decider({ config, world, journal, director, actor, mind, now });
+const ears = new Ears({ config, director, actor, journal, mind, decider });
+await ears.connect();
 
 actor.on("cue", (name) => voice.cue(name));
 
@@ -93,6 +96,11 @@ window.addEventListener("contextmenu", (e) => {
         },
       },
     },
+    toggle("Ears", config.hear.enabled, (on) => {
+      config.hear.enabled = on;
+      saveConfig({ hear: { enabled: on } });
+      ears.enable(on);
+    }),
     toggle("Captions", config.voice.captions, (on) => {
       config.voice.captions = on;
       saveConfig({ voice: { captions: on } });
@@ -140,5 +148,5 @@ requestAnimationFrame(frame);
 //   pesto.director.perform("dance")   make him do something
 //   pesto.decider.last                the last silent decision and why
 Object.assign(window, {
-  pesto: { stage, world, actor, director, journal, mind, decider, config, say: (text: string) => mind.wake({ kind: "said", text }) },
+  pesto: { stage, world, actor, director, journal, mind, decider, ears, config, say: (text: string) => mind.wake({ kind: "said", text }) },
 });

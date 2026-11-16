@@ -41,6 +41,14 @@ export interface Config {
     /** How far to the sides he is heard, 0..1: 0 is always straight ahead, 1 is the true angle to where he stands. */
     width: number;
   };
+  /** The microphone: his name, and what is said to him after it. */
+  hear: {
+    enabled: boolean;
+    /** How sure the wake word detector must be that it heard "Pesto", 0..1. Lower hears him called more easily, and by mistake more often. */
+    threshold: number;
+    /** Seconds after he finishes answering in which a reply needs no name. 0 turns it off. */
+    followUp: number;
+  };
   body: {
     /** Pixels per character unit; he is about 150 units tall. */
     scale: number;
@@ -53,6 +61,7 @@ export const DEFAULTS: Config = {
   mind: { baseUrl: "", apiKey: "", model: "", temperature: 0.9, reasoningEffort: "low", quietSeconds: 240 },
   decider: { enabled: true, baseUrl: "http://triton:11434", model: "d1:2b-q8_0", speakAbove: 0.72 },
   voice: { provider: "none", apiKey: "", voiceId: "", model: "eleven_v4_turbo", stability: 0.35, volume: 0.9, captions: false, muted: false, width: 0.3 },
+  hear: { enabled: true, threshold: 0.25, followUp: 6 },
   body: { scale: 0.8, border: 0 },
 };
 

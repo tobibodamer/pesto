@@ -1,8 +1,9 @@
 import { CAN, LID_PEEK, type Can } from "../can/can";
 import type { Actor } from "../pesto/actor";
 import { chance, clamp, pick, rand } from "../pesto/math";
+import { listening, type Hearing } from "../pesto/listening";
 import * as moves from "../pesto/moves";
-import type { Emotion } from "../pesto/pose";
+import type { Emotion, Pose } from "../pesto/pose";
 import { until, wait, type Routine } from "../pesto/routine";
 import type { Litter } from "../stage/litter";
 import type { Ledge, World } from "../world/world";
@@ -260,7 +261,13 @@ export class Director {
   /** Called for every reaction he performs, whoever asked for it. */
   onPerform: ((name: ReactionName, args: ReactionArgs) => void) | null = null;
 
+  /** What the microphone hears of the person, kept current by the ears while he listens. */
+  hearing: Hearing = { level: 0, speaking: false };
+
   private attentive = false;
+  private listenPose: ((p: Pose, dt: number) => void) | null = null;
+  private listenedFor = 0;
+  private jolted = false;
   private grabbedAt = -Infinity;
   private grabs = 0;
   private grabSound = "";
@@ -374,18 +381,30 @@ export class Director {
    * Gives the person his whole attention while they are typing or speaking
    * to him: whatever he was doing stops, and from the can the lid comes up.
    */
-  listen(on: boolean) {
+  listen(on: boolean, opts: { called?: boolean } = {}) {
     const a = this.actor;
     this.attentive = on;
     if (on) {
       a.stop();
+      this.listenedFor = 0;
+      this.jolted = !!opts.called;
+      a.gesture = this.listenPose = listening(() => this.hearing, this.jolted);
       if (a.mode === "can") {
         this.can.eyes = true;
         this.can.lid = LID_PEEK;
+        if (opts.called) {
+          this.can.shake(0.7);
+          a.cue("lid");
+        }
       }
-    } else if (a.mode === "can" && !a.busy) {
-      this.can.lid = 0;
-      this.can.eyes = false;
+    } else {
+      if (a.gesture === this.listenPose) a.gesture = null;
+      this.listenPose = null;
+      this.hearing = { level: 0, speaking: false };
+      if (a.mode === "can" && !a.busy) {
+        this.can.lid = 0;
+        this.can.eyes = false;
+      }
     }
     a.look({ kind: "user" }, on ? 600 : 1);
     a.feel("curious", on ? 600 : 0.6);
@@ -506,6 +525,13 @@ export class Director {
         this.catchAfter = this.world.time + 1;
         if (chance(0.7)) void a.run(moves.hangFrom(a, edge));
       }
+    }
+
+    if (this.attentive && a.mode === "can" && !a.busy) {
+      // The lid flies up at his name, then rides on their voice.
+      this.listenedFor += dt;
+      const pop = this.jolted ? 0.5 * Math.exp(-this.listenedFor * 6) : 0;
+      this.can.lid = LID_PEEK + pop + this.hearing.level * 0.1;
     }
 
     if (!this.autonomous || this.attentive || a.busy || a.mode === "held" || a.mode === "air" || a.mode === "glass") return;

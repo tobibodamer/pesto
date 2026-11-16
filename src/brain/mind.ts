@@ -1,6 +1,7 @@
 import type { Config } from "../config";
 import { http, sse } from "../net";
 import type { Actor } from "../pesto/actor";
+import * as moves from "../pesto/moves";
 import type { Paper } from "../stage/bubble";
 import type { Voice } from "../voice/voice";
 import type { Director } from "./director";
@@ -103,7 +104,16 @@ export class Mind {
       now: this.deps.now,
     });
     this.performance = performance;
-    const parser = new ScriptParser((item) => performance.push(item));
+    // While the answer is on its way he visibly thinks about it.
+    let pondering = reason.kind === "said" && actor.mode === "ground";
+    if (pondering) void actor.run(moves.ponder(actor, 20)).then(() => (pondering = false));
+    const parser = new ScriptParser((item) => {
+      if (pondering) {
+        pondering = false;
+        actor.stop();
+      }
+      performance.push(item);
+    });
     this.abort = new AbortController();
     let raw = "";
 

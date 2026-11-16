@@ -227,6 +227,43 @@ export class Decider {
     }
   }
 
+  /**
+   * How he takes being called by name: the sound he makes, if any, and his
+   * face while he listens. Null when the model is off or does not answer.
+   */
+  async called(): Promise<{ sound: string | null; feeling: Emotion | null } | null> {
+    const { config, journal, actor, mind } = this.deps;
+    if (!config.decider.enabled || this.failures >= 5) return null;
+    const sounds: Record<string, string> = {
+      none: "Nothing. He just looks at them and waits. They were already talking with him a moment ago.",
+      huh: 'A short, curious "hm?". The ordinary answer.',
+      chitter: "A pleased chitter. He is glad they finally want something from him.",
+      grumble: "A grumble. He was asleep or busy, or they have been ignoring or annoying him.",
+    };
+    const hour = this.deps.director.hour();
+    const state = [
+      WHO,
+      journal.brief(),
+      actor.mode === "can" ? "Pesto was hidden inside his can." : actor.busy ? "Pesto was out of his can, in the middle of something." : "Pesto was out of his can, doing nothing much.",
+      Number.isFinite(mind.lastSpokeAt) ? `He last spoke ${Math.round((this.deps.now() - mind.lastSpokeAt) / 60)} min ago.` : "He has not spoken yet today.",
+      `It is ${hour}:00. The person just said his name out loud.`,
+    ].join("\n");
+    const questions: Record<string, Question> = {
+      sound: { type: "choice", instructions: "What sound does Pesto make on hearing his name?", criteria: sounds },
+      feeling: { type: "choice", instructions: "What does Pesto feel about being called right now?", criteria: FEELINGS as Record<string, string> },
+    };
+    try {
+      const { answers: a } = await postJson<SystemOneResponse>(`${config.decider.baseUrl.replace(/\/$/, "")}/v1/systemone`, { model: config.decider.model, state, questions });
+      const sound = a.sound?.type === "choice" ? sample(a.sound.probabilities) : "huh";
+      return {
+        sound: sound === "none" ? null : sound,
+        feeling: a.feeling?.type === "choice" && a.feeling.confidence > 0.38 ? (a.feeling.choice as Emotion) : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private async pester(rung: (typeof LADDER)[number], target: { window: number } | "cursor") {
     const { director, mind } = this.deps;
     const minutes = Math.max(1, Math.round((this.deps.now() - this.slackSince) / 60));
