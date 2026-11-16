@@ -104,6 +104,53 @@
       .row.idle {
         opacity: 0.45;
       }
+      .group {
+        border-top: 2px solid var(--rule);
+      }
+      .group summary {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 52px;
+        padding: 8px 0;
+        font-weight: 600;
+        list-style: none;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      .group summary::-webkit-details-marker {
+        display: none;
+      }
+      .group summary::after {
+        content: "";
+        flex: none;
+        width: 7px;
+        height: 7px;
+        order: 1;
+        border: solid var(--soft);
+        border-width: 0 2.2px 2.2px 0;
+        rotate: -45deg;
+        transition: rotate 0.15s;
+      }
+      .group[open] summary::after {
+        rotate: 45deg;
+      }
+      .group summary output {
+        order: 2;
+        margin-left: auto;
+      }
+      .group summary.idle {
+        opacity: 0.45;
+      }
+      .group summary:focus-visible {
+        outline: 2px solid var(--ink);
+        outline-offset: 2px;
+        border-radius: 6px;
+      }
+      .group .row {
+        margin-left: 16px;
+        border-top-style: dashed;
+      }
       .label label {
         font-weight: 600;
       }

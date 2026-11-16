@@ -46,6 +46,8 @@ export class Mind {
   /** True from wake until the performance has finished. */
   busy = false;
   lastSpokeAt = -Infinity;
+  /** What he said out loud the last time he spoke. */
+  lastSaid = "";
 
   private turns: Turn[] = [];
   private journalMark = 0;
@@ -184,7 +186,8 @@ export class Mind {
         if (this.turns.length > MAX_TURNS) this.turns.shift();
       }
       if (performance.said.length) {
-        journal.add("pesto", `said: "${performance.said.join(" ")}"`);
+        this.lastSaid = performance.said.join(" ");
+        journal.add("pesto", `said: "${this.lastSaid}"`);
         this.lastSpokeAt = this.deps.now();
       }
       if (performance.did.length) journal.add("pesto", `did: ${performance.did.join(", ")}`);

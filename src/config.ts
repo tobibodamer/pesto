@@ -62,6 +62,12 @@ export interface Config {
     threshold: number;
     /** Seconds after he finishes answering in which a reply needs no name. 0 turns it off. */
     followUp: number;
+    /** Replies without his name in a row before he needs it again. 0 allows any number. */
+    followUpReplies: number;
+    /** Fewest words, not counting "hm" and "uh", a reply without his name needs. */
+    followUpWords: number;
+    /** How sure the decision model must be that a reply without his name was meant for him, 0..1. 0 skips asking. */
+    followUpCheck: number;
     /** Lets what they are saying show on his face while they are still talking. Needs the decision model and speech to text. */
     asides: boolean;
     /** What turns speech into text. With "none" he hears his name but not what is said. */
@@ -92,7 +98,7 @@ export const DEFAULTS: Config = {
   decider: { enabled: true, baseUrl: "http://triton:11434", model: "d1:2b-q8_0", speakAbove: 0.72 },
   voice: { provider: "none", apiKey: "", voiceId: "", model: "eleven_v4_turbo", stability: 0.35, volume: 0.9, captions: false, muted: false, width: 0.3 },
   sfx: { enabled: true, volume: 0.9, reactions: 1, breathing: 1, can: 1, bumps: 1 },
-  hear: { enabled: true, threshold: 0.25, followUp: 6, asides: true, provider: "elevenlabs", apiKey: "", model: "scribe_v3_live", language: "" },
+  hear: { enabled: true, threshold: 0.25, followUp: 5, followUpReplies: 2, followUpWords: 1, followUpCheck: 0.5, asides: true, provider: "elevenlabs", apiKey: "", model: "scribe_v3_live", language: "" },
   debug: { panel: false },
   body: { scale: 0.8, can: 1, border: 0 },
 };

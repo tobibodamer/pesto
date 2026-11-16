@@ -36,7 +36,16 @@ const ASIDE_REST = 5;
 /** Most reactions in one turn. */
 const ASIDE_MOST = 3;
 
+/** Sounds a transcriber makes words of that say nothing on their own. */
+const FILLER = /^(h+m+|m+h+m+|u+h+m*|u+m+|ä+h+m*|e+h+m*|a+h+|o+h+)$/;
+
 const count = (text: string) => text.split(/\s+/).filter(Boolean).length;
+const meaningful = (text: string) =>
+  text
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^\p{L}\p{N}']/gu, ""))
+    .filter((w) => w && !FILLER.test(w)).length;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
@@ -53,6 +62,8 @@ export class Ears {
   words: HearEvents["hear://words"] = { text: "", done: null };
 
   private calls = 0;
+  /** Turns in a row heard without his name, the current one included. 0 while he was called by name. */
+  private nameless = 0;
   private asides = { judged: 0, judgedAt: 0, shownAt: -Infinity, shown: 0, last: null as string | null, busy: false };
   private told = false;
 
@@ -113,6 +124,7 @@ export class Ears {
   private async called() {
     const { director, actor, mind, decider, journal } = this.deps;
     const call = ++this.calls;
+    this.nameless = 0;
     const wasTalking = actor.talking;
     const again = this.listening;
     // Asked before anything else so the answer is there by the time it is needed.
@@ -183,22 +195,49 @@ export class Ears {
       return;
     }
     this.listening = false;
-    trace.set("ears", "answering");
     director.hearing = { level: 0, speaking: false };
     const call = this.calls;
+    if (this.nameless > 0) {
+      trace.set("ears", "is that for him?");
+      const why = await this.notForHim(e.text);
+      if (call !== this.calls || this.listening) return;
+      if (why) {
+        trace.log("hear", `not for him: ${why}`);
+        this.deps.journal.add("user", `said, not to you: "${e.text}"`, 0);
+        return this.relax();
+      }
+    }
+    trace.set("ears", "answering");
     await mind.wake({ kind: "said", text: e.text });
     trace.log("hear", "he has answered");
     if (call !== this.calls || this.listening) return;
-    if (config.hear.followUp <= 0 || !config.hear.enabled) return director.listen(false);
+    const { followUp, followUpReplies } = config.hear;
+    if (followUp <= 0 || !config.hear.enabled) return this.relax();
+    if (followUpReplies > 0 && this.nameless >= followUpReplies) {
+      trace.log("hear", `${this.nameless} replies without his name: he needs it again`);
+      return this.relax();
+    }
     // He stays with them for a moment: a reply needs no name.
     try {
-      await invoke("hear_listen", { seconds: config.hear.followUp });
-      trace.log("hear", `listening on for ${config.hear.followUp} s, no name needed`);
+      await invoke("hear_listen", { seconds: followUp });
+      trace.log("hear", `listening on for ${followUp} s, no name needed`);
       this.begin();
+      this.nameless++;
       director.listen(true);
     } catch {
       director.listen(false);
     }
+  }
+
+  /** Why what was heard without his name should be left alone, or null when he answers it. */
+  private async notForHim(text: string): Promise<string | null> {
+    const { config, decider, mind } = this.deps;
+    const words = meaningful(text);
+    if (words < Math.max(1, config.hear.followUpWords)) return words ? `only ${words} word${words === 1 ? "" : "s"}` : "only filler";
+    if (config.hear.followUpCheck <= 0) return null;
+    const p = await decider.replying(text, mind.lastSaid);
+    if (p == null) return null;
+    return p < config.hear.followUpCheck ? `${p.toFixed(2)} sure it was meant for him` : null;
   }
 
   private begin() {

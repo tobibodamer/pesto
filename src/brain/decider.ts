@@ -311,6 +311,37 @@ export class Decider {
   }
 
   /**
+   * How likely it is, 0..1, that what they said right after his answer was
+   * meant for him. Null when the model is off or does not answer.
+   */
+  async replying(heard: string, hisLast: string): Promise<number | null> {
+    const { config } = this.deps;
+    if (!config.decider.enabled || this.failures >= 5) return null;
+    const state = [
+      WHO,
+      hisLast ? `Pesto just said out loud: "${hisLast.split(/\s+/).slice(-40).join(" ")}"` : "Pesto just answered the person.",
+      `A few seconds later, without saying his name, the microphone picked up: "${heard.split(/\s+/).slice(-45).join(" ")}"`,
+    ].join("\n");
+    const questions: Record<string, Question> = {
+      forHim: {
+        type: "noul",
+        instructions: "Was that said to Pesto?",
+        criteria: {
+          yes: "They answer him, ask him something, react to what he said or carry on the conversation with him.",
+          no: "They talk to someone else or on a call, think out loud, read something aloud, or it is a video, music or noise in the room.",
+        },
+      },
+    };
+    try {
+      const { forHim } = await this.ask("reply", state, questions);
+      return forHim?.type === "noul" ? forHim.noul : null;
+    } catch (err) {
+      console.warn(`decider: ${err}`);
+      return null;
+    }
+  }
+
+  /**
    * How he takes being called by name: the sound he makes, if any, and his
    * face while he listens. Null when the model is off or does not answer.
    */

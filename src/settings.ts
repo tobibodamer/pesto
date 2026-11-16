@@ -11,7 +11,10 @@ interface Base {
   /** Greyed out while this is false, but still editable. */
   when?: (c: Config) => boolean;
 }
-type Field = Base &
+/** Settings that belong together, folded away under one row until opened. */
+type Group = Base & { kind: "group"; id: string; fields: Leaf[]; summary?: (c: Config) => string };
+type Field = Leaf | Group;
+type Leaf = Base &
   (
     | { kind: "switch"; key: Path; invert?: boolean }
     | { kind: "text"; key: Path; placeholder?: string; secret?: boolean; suggest?: string[] }
@@ -45,6 +48,7 @@ interface Section {
 const percent = (v: number) => `${Math.round(v * 100)}%`;
 const usesVoice = (c: Config) => c.voice.provider === "elevenlabs";
 const transcribes = (c: Config) => c.hear.provider === "elevenlabs";
+const replies = (c: Config) => c.hear.followUp > 0;
 
 const SECTIONS: Section[] = [
   {
@@ -154,7 +158,27 @@ const SECTIONS: Section[] = [
         invert: true,
         onRelease: true,
       },
-      { kind: "number", key: "hear.followUp", label: "Reply without name", hint: "How long after he answers you can reply without his name. 0 is off.", min: 0, max: 60, unit: "s" },
+      {
+        kind: "group",
+        id: "replies",
+        label: "Reply without name",
+        summary: (c) => (replies(c) ? `${c.hear.followUp} s` : "Off"),
+        fields: [
+          { kind: "number", key: "hear.followUp", label: "Window", hint: "How long after he answers you can reply without his name. 0 is off.", min: 0, max: 60, unit: "s" },
+          { kind: "number", key: "hear.followUpReplies", label: "In a row", hint: "Then he needs his name again. 0 is unlimited.", min: 0, max: 20, unit: "replies", when: replies },
+          { kind: "number", key: "hear.followUpWords", label: "Shortest reply", min: 1, max: 10, unit: "words", when: replies },
+          {
+            kind: "slider",
+            key: "hear.followUpCheck",
+            label: "Must sound meant for him",
+            min: 0,
+            max: 0.95,
+            step: 0.05,
+            show: (v) => (v > 0 ? percent(v) : "Off"),
+            when: (c) => replies(c) && c.decider.enabled,
+          },
+        ],
+      },
       { kind: "switch", key: "hear.asides", label: "React while you talk", hint: "He reacts to what you say before you finish. Needs Reactions and speech to text." },
       {
         kind: "select",
@@ -208,7 +232,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string,
   return node;
 }
 
-function control(field: Field, id: string): HTMLElement {
+function control(field: Leaf, id: string): HTMLElement {
   switch (field.kind) {
     case "switch": {
       const input = el("input", { type: "checkbox", className: "switch", id });
@@ -380,17 +404,40 @@ function section(s: Section): HTMLElement {
     syncs.push(() => (input.checked = enabled()));
     header.append(input);
   }
-  for (const field of s.fields) {
-    const id = `f${uid++}`;
-    const label = el("div", { className: "label" }, el("label", { htmlFor: id }, field.label));
-    const row = el("div", { className: "row" }, label, control(field, id));
-    if (field.hint) {
-      label.append(el("p", { className: "hint", id: `${id}-hint` }, field.hint));
-      row.querySelector(`#${id}`)?.setAttribute("aria-describedby", `${id}-hint`);
-    }
-    syncs.push(() => row.classList.toggle("idle", !enabled() || (field.when ? !field.when(config) : false)));
-    node.append(row);
+  for (const field of s.fields) node.append(field.kind === "group" ? group(field, enabled) : row(field, enabled));
+  return node;
+}
+
+function row(field: Leaf, enabled: () => boolean): HTMLElement {
+  const id = `f${uid++}`;
+  const label = el("div", { className: "label" }, el("label", { htmlFor: id }, field.label));
+  const node = el("div", { className: "row" }, label, control(field, id));
+  if (field.hint) {
+    label.append(el("p", { className: "hint", id: `${id}-hint` }, field.hint));
+    node.querySelector(`#${id}`)?.setAttribute("aria-describedby", `${id}-hint`);
   }
+  syncs.push(() => node.classList.toggle("idle", !enabled() || (field.when ? !field.when(config) : false)));
+  return node;
+}
+
+function group(g: Group, enabled: () => boolean): HTMLElement {
+  const summary = el("summary", {}, el("span", { className: "title" }, g.label));
+  if (g.summary) {
+    const out = el("output");
+    summary.append(out);
+    syncs.push(() => (out.textContent = g.summary!(config)));
+  }
+  const node = el("details", { className: "group" }, summary, ...g.fields.map((f) => row(f, enabled)));
+  const remember = `settings.open.${g.id}`;
+  try {
+    node.open = localStorage.getItem(remember) === "1";
+  } catch {}
+  node.addEventListener("toggle", () => {
+    try {
+      localStorage.setItem(remember, node.open ? "1" : "0");
+    } catch {}
+  });
+  syncs.push(() => summary.classList.toggle("idle", !enabled() || (g.when ? !g.when(config) : false)));
   return node;
 }
 
