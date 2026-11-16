@@ -48,6 +48,14 @@ export interface Config {
     threshold: number;
     /** Seconds after he finishes answering in which a reply needs no name. 0 turns it off. */
     followUp: number;
+    /** What turns speech into text. With "none" he hears his name but not what is said. */
+    provider: "elevenlabs" | "none";
+    /** Empty uses the voice's key. */
+    apiKey: string;
+    /** `scribe_v3_live` ends a turn when the thought is finished; `scribe_v2_realtime` waits for silence. */
+    model: string;
+    /** ISO 639-1 code such as "en" or "de". Empty lets it work out the language, and mix them. */
+    language: string;
   };
   body: {
     /** Pixels per character unit; he is about 150 units tall. */
@@ -61,7 +69,7 @@ export const DEFAULTS: Config = {
   mind: { baseUrl: "", apiKey: "", model: "", temperature: 0.9, reasoningEffort: "low", quietSeconds: 240 },
   decider: { enabled: true, baseUrl: "http://triton:11434", model: "d1:2b-q8_0", speakAbove: 0.72 },
   voice: { provider: "none", apiKey: "", voiceId: "", model: "eleven_v4_turbo", stability: 0.35, volume: 0.9, captions: false, muted: false, width: 0.3 },
-  hear: { enabled: true, threshold: 0.25, followUp: 6 },
+  hear: { enabled: true, threshold: 0.25, followUp: 6, provider: "elevenlabs", apiKey: "", model: "scribe_v3_live", language: "" },
   body: { scale: 0.8, border: 0 },
 };
 

@@ -30,7 +30,7 @@ const voice = createVoice(config, world);
 const journal = new Journal(world, actor);
 const mind = new Mind({ config, journal, director, actor, voice, paper, now });
 const decider = new Decider({ config, world, journal, director, actor, mind, now });
-const ears = new Ears({ config, director, actor, journal, mind, decider });
+const ears = new Ears({ config, director, actor, journal, mind, decider, paper, now });
 await ears.connect();
 
 actor.on("cue", (name) => voice.cue(name));

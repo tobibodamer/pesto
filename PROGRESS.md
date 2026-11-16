@@ -17,7 +17,7 @@ In order. Each step leaves the app in a runnable state.
 5. ✅ **Decider live.** About 250 ms per decision on Triton.
 6. 🟡 **Voice.** ElevenLabs v4 Turbo through the binaural renderer works. His voice is Scruffy Duck. First listen: startlingly real but too roomy and too wide, and too studio-clean and big. Now: early bounces come from right around him, the Width setting (default 0.3) scales the heard angles, the main screen is narrowed to 0.4 of that and the other monitors open up twice as fast past its edges, and a small-body filter takes out the chest and the air. Open: Tobias judges `dev/out/audition/narrow2-*.wav` (made with `node dev/audition.mjs`); then the can colour and the generated sounds.
 7. 🟡 **A way to talk to him without devtools.** Ctrl+Alt+P (or the tray's Talk…) opens a text box above his head; Enter sends, Esc closes. Set `ask.hotkey` in config.json to change it.
-8. 🟡 **Call him by name.** Say "Pesto" or "hey Pesto": he snaps to attention, follows your voice and relaxes when you stop. Nothing is transcribed yet, so he cannot answer what was said. Next: speech to text with turn detection (`hear://ended` already carries a `text` field for it).
+8. 🟡 **Talk to him out loud.** Say "Pesto" or "hey Pesto" and keep talking: he snaps to attention, follows your voice, and answers when you have finished. Next: react while you are still speaking (`hear://words` carries the words so far and how finished they sound), and a local transcriber.
 9. ⬜ Then the feature tables below, roughly top to bottom.
 
 ### Known rough edges
@@ -103,10 +103,13 @@ In order. Each step leaves the app in a runnable state.
 | Lip movement driven by the audio | ✅ loudness only |
 | Typed input box on a hotkey | ✅ `src-tauri/src/ask.rs`, `ask.html`, `src/ask.ts` |
 | Microphone | ✅ default input device, followed when it changes; the Ears toggle in his menu releases it |
-| Speech to text, end of turn by meaning rather than silence, eager turns | ⬜ the turn ends after 1.1 s of silence for now |
+| Speech to text | ✅ ElevenLabs `scribe_v3_live` over its realtime socket (`src-tauri/src/hear/stt.rs`), one session per turn, started at his name with the 1.5 s before it. The key needs the Speech to Text permission; `hear.apiKey` takes a separate one. English and German mixed is untested |
+| End of turn by meaning rather than silence | 🟡 the model's turn prediction, plus our own shortcut: 0.6 s of silence once it rates the sentence 0.65 finished. Without a transcriber: 1.1 s of silence |
+| Reacting while they still speak, eager turns | ⬜ |
+| Local speech to text | ⬜ later |
 | Wake word "Pesto" / "hey Pesto" | 🟡 about 0.4 s after the name ends. With synthetic voices "hey Pesto" is reliable and the bare name is heard about four times in five; near-homophones ("presto", "pesticide") can set it off. `hear.threshold` in config.json tunes it (lower hears more) |
 | First reaction to his name: instant snap to attention; the decision model picks the sound (none, "hm?", chitter, grumble) and his face, played only if you pause after the name | 🟡 decision takes 80–160 ms; sounds unheard |
-| Reply without the name for a few seconds after he answers (`hear.followUp`) | 🟡 written, waits on speech to text |
+| Reply without the name for a few seconds after he answers (`hear.followUp`) | 🟡 runs, not yet tried on purpose |
 | Interrupting him mid-sentence | 🟡 `mind.interrupt` exists |
 | Local speech synthesis | ⬜ later |
 | Streaming synthesis over the websocket for a faster first word | ⬜ |

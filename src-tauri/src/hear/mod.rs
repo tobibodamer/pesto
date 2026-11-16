@@ -7,9 +7,14 @@
 //!   hear://status  { ready, error }      the microphone came up or went away
 //!   hear://wake    { keyword }           his name was said
 //!   hear://voice   { level, speaking }   their voice, 25 times a second while listening
+//!   hear://words   { text, done }        what they have said so far, and how finished it sounds (0..1)
 //!   hear://ended   { text, spoke }       their turn is over
+//!
+//! Audio leaves the machine only during a turn, and only when speech to text
+//! is set up: from a moment before his name until the turn ends.
 
 mod mic;
+mod stt;
 mod wake;
 
 use std::collections::VecDeque;
@@ -32,8 +37,15 @@ use crate::sense::{emit_event, SenseState};
 const RATE: usize = SAMPLE_RATE as usize;
 /// Samples per `hear://voice` report.
 const FRAME: usize = RATE / 25;
-/// How long they must have been quiet before their turn counts as over.
+/// How long they must have been quiet before their turn counts as over, when nothing understands the words.
 const END_SILENCE: usize = RATE * 11 / 10;
+/// The same while the words are being transcribed: the transcriber normally calls the end first.
+const END_SILENCE_TRANSCRIBED: usize = RATE * 3;
+/// When the transcriber finds the sentence this finished, a short silence is enough to end the turn.
+const SOUNDS_DONE: f32 = 0.65;
+const END_SILENCE_DONE: usize = RATE * 6 / 10;
+/// How much from before his name goes to the transcriber: the name itself and whatever ran straight on from it.
+const BEFORE_NAME: usize = RATE * 3 / 2;
 /// Speech shorter than this is a cough or the tail of his name, not a turn.
 const MIN_SPEECH: usize = RATE / 4;
 /// How long he waits for them to start after his name.
@@ -43,7 +55,7 @@ const LONGEST_TURN: usize = RATE * 45;
 const RETRY: Duration = Duration::from_secs(3);
 
 enum Command {
-    Enable { on: bool, threshold: f32 },
+    Enable { on: bool, threshold: f32, stt: Option<stt::Settings> },
     Listen { seconds: f32 },
     Stop,
     Feed(Vec<f32>),
@@ -62,9 +74,10 @@ impl Hear {
 }
 
 /// Starts or stops listening to the microphone. Nothing is captured while off.
+/// Without `stt` he hears his name and their voice but not what they say.
 #[tauri::command]
-pub fn hear_enable(hear: State<'_, Arc<Hear>>, on: bool, threshold: f32) -> Result<(), String> {
-    hear.send(Command::Enable { on, threshold })
+pub fn hear_enable(hear: State<'_, Arc<Hear>>, on: bool, threshold: f32, stt: Option<stt::Settings>) -> Result<(), String> {
+    hear.send(Command::Enable { on, threshold, stt })
 }
 
 /// Listens for a turn without his name being said, giving up after `seconds` of nothing.
@@ -115,6 +128,12 @@ struct VoiceEvent {
 }
 
 #[derive(Serialize, Clone)]
+struct WordsEvent {
+    text: String,
+    done: Option<f32>,
+}
+
+#[derive(Serialize, Clone)]
 struct EndedEvent {
     text: Option<String>,
     spoke: bool,
@@ -128,16 +147,24 @@ struct Turn {
     /// Samples he waits for them to start.
     patience: usize,
     frame: Vec<f32>,
+    /// The transcriber for this turn, and the words it has made out so far.
+    session: Option<stt::Session>,
+    words: String,
+    /// How finished the words sound to the transcriber, 0..1.
+    done: f32,
 }
 
 impl Turn {
-    fn new(patience_seconds: f32) -> Self {
+    fn new(patience_seconds: f32, session: Option<stt::Session>) -> Self {
         Self {
             heard: 0,
             speech: 0,
             quiet: 0,
             patience: (patience_seconds.clamp(1.0, 60.0) * RATE as f32) as usize,
             frame: Vec::with_capacity(FRAME),
+            session,
+            words: String::new(),
+            done: 0.0,
         }
     }
 
@@ -147,7 +174,14 @@ impl Turn {
 
     fn over(&self) -> bool {
         if self.spoke() {
-            self.quiet >= END_SILENCE || self.heard >= LONGEST_TURN
+            let silence = if self.session.is_none() {
+                END_SILENCE
+            } else if self.done >= SOUNDS_DONE && !only_name(&self.words) {
+                END_SILENCE_DONE
+            } else {
+                END_SILENCE_TRANSCRIBED
+            };
+            self.quiet >= silence || self.heard >= LONGEST_TURN
         } else {
             self.heard >= self.patience
         }
@@ -176,6 +210,16 @@ fn load_vad(models: &std::path::Path) -> Result<VoiceActivityDetector, String> {
     VoiceActivityDetector::create(&config, 60.0).ok_or("the voice activity model did not load".into())
 }
 
+/// Whether all that was said is his name, which starts a turn but is not one.
+fn only_name(text: &str) -> bool {
+    let words: Vec<String> = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .collect();
+    !words.is_empty() && words.iter().all(|w| matches!(w.as_str(), "pesto" | "presto" | "hey" | "hi" | "yo" | "ok" | "okay" | "hello" | "hallo"))
+}
+
 /// Loudness of a stretch of speech as 0..1, from about a whisper to a raised voice.
 fn level(frame: &[f32]) -> f32 {
     let rms = (frame.iter().map(|s| s * s).sum::<f32>() / frame.len().max(1) as f32).sqrt();
@@ -192,6 +236,9 @@ struct Ears {
     wake: Option<Wake>,
     vad: Option<VoiceActivityDetector>,
     turn: Option<Turn>,
+    stt: Option<stt::Settings>,
+    /// The last moments heard, kept so the transcriber gets his name and what ran on from it.
+    recent: VecDeque<f32>,
     /// A recording being heard in place of the microphone.
     fed: VecDeque<f32>,
     error: Option<String>,
@@ -238,12 +285,59 @@ impl Ears {
         self.report(None);
     }
 
+    fn begin_turn(&mut self, patience: f32, before: Vec<f32>) {
+        let session = self.stt.as_ref().map(|settings| stt::Session::open(settings, before));
+        self.turn = Some(Turn::new(patience, session));
+    }
+
+    /// Ends the turn with whatever words were made out, if it is to be reported at all.
     fn end_turn(&mut self, report: bool) {
         if let Some(turn) = self.turn.take() {
             if report {
-                self.emit("hear://ended", &EndedEvent { text: None, spoke: turn.spoke() });
+                let text = Some(turn.words.clone()).filter(|w| !w.is_empty() && !only_name(w));
+                self.emit("hear://ended", &EndedEvent { text, spoke: turn.spoke() });
             }
         }
+    }
+
+    /// Takes in what the transcriber has made out. Returns true when it says their turn is over.
+    fn listen_to_transcriber(&mut self) -> bool {
+        let Some(turn) = self.turn.as_mut() else {
+            return false;
+        };
+        let events: Vec<stt::Heard> = turn.session.as_ref().map(|s| s.heard.try_iter().collect()).unwrap_or_default();
+        let mut finished = false;
+        let mut failed = None;
+        let mut words = None;
+        for event in events {
+            match event {
+                stt::Heard::Partial { text, done } => {
+                    turn.words = text.clone();
+                    turn.done = done.unwrap_or(0.0);
+                    words = Some(WordsEvent { text, done });
+                }
+                stt::Heard::Committed(text) => {
+                    if !text.is_empty() && !only_name(&text) {
+                        turn.words = text;
+                        finished = true;
+                    }
+                }
+                stt::Heard::Failed(err) => {
+                    turn.session = None;
+                    failed = Some(err);
+                }
+            }
+        }
+        if let Some(words) = words {
+            self.emit("hear://words", &words);
+        }
+        if let Some(err) = failed {
+            eprintln!("[hear] speech to text: {err}");
+            self.report(Some(format!("speech to text: {err}")));
+        } else if finished {
+            self.report(None);
+        }
+        finished
     }
 
     fn hear(&mut self, samples: Vec<f32>) {
@@ -264,15 +358,23 @@ impl Ears {
             vad.pop();
         }
         let speaking = vad.detected();
+        self.recent.extend(&samples);
+        let extra = self.recent.len().saturating_sub(BEFORE_NAME);
+        self.recent.drain(..extra);
         if let Some(keyword) = self.wake.as_mut().and_then(|w| w.hear(&samples)) {
             self.emit("hear://wake", &WakeEvent { keyword });
             self.emit("hear://voice", &VoiceEvent { level: 0.0, speaking });
-            self.turn = Some(Turn::new(WAIT_AFTER_NAME));
+            let before = self.recent.iter().copied().collect();
+            self.begin_turn(WAIT_AFTER_NAME, before);
             return;
         }
+        let finished = self.listen_to_transcriber();
         let Some(turn) = self.turn.as_mut() else {
             return;
         };
+        if let Some(session) = &turn.session {
+            session.send(&samples);
+        }
         turn.heard += samples.len();
         if speaking {
             turn.speech += samples.len();
@@ -286,7 +388,7 @@ impl Ears {
             let frame: Vec<f32> = turn.frame.drain(..FRAME).collect();
             reports.push(VoiceEvent { level: if speaking { level(&frame) } else { 0.0 }, speaking });
         }
-        let over = turn.over();
+        let over = finished || turn.over();
         for report in &reports {
             self.emit("hear://voice", report);
         }
@@ -302,7 +404,8 @@ impl Ears {
         while !sense.shutdown.load(Ordering::Acquire) {
             for command in commands.try_iter() {
                 match command {
-                    Command::Enable { on, threshold } => {
+                    Command::Enable { on, threshold, stt } => {
+                        self.stt = stt.filter(|s| !s.api_key.is_empty() && !s.model.is_empty());
                         if (threshold - self.threshold).abs() > 0.001 {
                             self.threshold = threshold;
                             self.wake = None;
@@ -316,7 +419,7 @@ impl Ears {
                     }
                     Command::Listen { seconds } => {
                         if self.mic.is_some() {
-                            self.turn = Some(Turn::new(seconds));
+                            self.begin_turn(seconds, Vec::new());
                         }
                     }
                     Command::Stop => self.end_turn(false),
@@ -378,6 +481,8 @@ pub fn start(app: &AppHandle, sense: Arc<SenseState>) -> Arc<Hear> {
                 wake: None,
                 vad: None,
                 turn: None,
+                stt: None,
+                recent: VecDeque::with_capacity(BEFORE_NAME),
                 fed: VecDeque::new(),
                 error: None,
             };

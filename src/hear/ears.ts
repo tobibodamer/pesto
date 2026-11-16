@@ -6,6 +6,7 @@ import type { Journal } from "../brain/journal";
 import type { Mind } from "../brain/mind";
 import type { Config } from "../config";
 import type { Actor } from "../pesto/actor";
+import type { Paper } from "../stage/bubble";
 
 /** Events from the microphone side (`src-tauri/src/hear`). */
 interface HearEvents {
@@ -13,6 +14,8 @@ interface HearEvents {
   "hear://wake": { keyword: string };
   /** Their voice while he listens, about 25 times a second. */
   "hear://voice": { level: number; speaking: boolean };
+  /** What they have said so far in this turn, and how finished it sounds, 0..1, when the transcriber can tell. */
+  "hear://words": { text: string; done: number | null };
   /** Their turn is over. `text` is null when nothing was understood, `spoke` whether they said anything at all. */
   "hear://ended": { text: string | null; spoke: boolean };
   /** Whether the microphone is being listened to, and why not if it is not. */
@@ -34,8 +37,11 @@ export class Ears {
   /** Whether he is listening to a turn right now. */
   listening = false;
   status: HearEvents["hear://status"] = { ready: false, error: null };
+  /** What they have said so far in the turn being listened to. */
+  words: HearEvents["hear://words"] = { text: "", done: null };
 
   private calls = 0;
+  private told = false;
 
   constructor(
     private deps: {
@@ -45,6 +51,8 @@ export class Ears {
       journal: Journal;
       mind: Mind;
       decider: Decider;
+      paper: Paper;
+      now: () => number;
     },
   ) {}
 
@@ -52,19 +60,30 @@ export class Ears {
     const on = <K extends keyof HearEvents>(name: K, fn: (payload: HearEvents[K]) => void) => listen<HearEvents[K]>(name, (e) => fn(e.payload));
     await on("hear://status", (s) => {
       this.status = s;
-      if (s.error) console.warn("ears:", s.error);
+      if (!s.error) return;
+      console.warn("ears:", s.error);
+      // Hearing them but not their words would otherwise look like him ignoring them.
+      if (this.told || !s.error.startsWith("speech to text")) return;
+      this.told = true;
+      const why = /auth|permission/i.test(s.error)
+        ? "The ElevenLabs key needs the **Speech to Text** permission, or put another key in `hear.apiKey`."
+        : s.error;
+      this.deps.paper.show(`I hear you, but not the words. ${why}`, "note", 12, this.deps.now());
     });
     await on("hear://wake", () => void this.called());
     await on("hear://voice", (v) => {
       if (this.listening) this.deps.director.hearing = v;
     });
+    await on("hear://words", (w) => (this.words = w));
     await on("hear://ended", (e) => void this.ended(e));
     this.enable(this.deps.config.hear.enabled);
   }
 
   enable(on: boolean) {
-    const { hear } = this.deps.config;
-    void invoke("hear_enable", { on, threshold: hear.threshold }).catch((err) => console.warn("ears:", err));
+    const { hear, voice } = this.deps.config;
+    const apiKey = hear.apiKey || voice.apiKey;
+    const stt = hear.provider === "elevenlabs" && apiKey ? { apiKey, model: hear.model, language: hear.language } : null;
+    void invoke("hear_enable", { on, threshold: hear.threshold, stt }).catch((err) => console.warn("ears:", err));
     if (!on && this.listening) this.relax();
   }
 
