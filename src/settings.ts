@@ -141,6 +141,7 @@ const SECTIONS: Section[] = [
         onRelease: true,
       },
       { kind: "number", key: "hear.followUp", label: "Reply without name", hint: "How long after he answers you can reply without his name. 0 is off.", min: 0, max: 60, unit: "s" },
+      { kind: "switch", key: "hear.asides", label: "React while you talk", hint: "He reacts to what you say before you finish. Needs Reactions and speech to text." },
       {
         kind: "select",
         key: "hear.provider",

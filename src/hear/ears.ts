@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { Decider } from "../brain/decider";
+import { ASIDES, type Decider } from "../brain/decider";
 import type { Director } from "../brain/director";
 import type { Journal } from "../brain/journal";
 import type { Mind } from "../brain/mind";
 import type { Config } from "../config";
+import { trace } from "../debug/trace";
 import type { Actor } from "../pesto/actor";
 import type { Paper } from "../stage/bubble";
 
@@ -25,6 +26,17 @@ interface HearEvents {
 /** How long after his name he waits to see whether they keep talking before he makes a sound. */
 const ACK_AFTER_MS = 300;
 
+/** Words they must have said before he reacts to any of it: short requests get plain attention. */
+const ASIDE_AFTER_WORDS = 7;
+/** New words needed since the last look before it is worth another. */
+const ASIDE_NEW_WORDS = 5;
+/** Least seconds between two looks at what they are saying, and between two visible reactions. */
+const ASIDE_EVERY = 2.2;
+const ASIDE_REST = 5;
+/** Most reactions in one turn. */
+const ASIDE_MOST = 3;
+
+const count = (text: string) => text.split(/\s+/).filter(Boolean).length;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
@@ -41,6 +53,7 @@ export class Ears {
   words: HearEvents["hear://words"] = { text: "", done: null };
 
   private calls = 0;
+  private asides = { judged: 0, judgedAt: 0, shownAt: -Infinity, shown: 0, last: null as string | null, busy: false };
   private told = false;
 
   constructor(
@@ -62,6 +75,7 @@ export class Ears {
       this.status = s;
       if (!s.error) return;
       console.warn("ears:", s.error);
+      trace.log("hear", s.error);
       // Hearing them but not their words would otherwise look like him ignoring them.
       if (this.told || !s.error.startsWith("speech to text")) return;
       this.told = true;
@@ -74,7 +88,11 @@ export class Ears {
     await on("hear://voice", (v) => {
       if (this.listening) this.deps.director.hearing = v;
     });
-    await on("hear://words", (w) => (this.words = w));
+    await on("hear://words", (w) => {
+      this.words = w;
+      if (trace.on) trace.set("heard", `${count(w.text)} words${w.done == null ? "" : `, ${w.done.toFixed(2)} finished`}  …${w.text.split(/\s+/).slice(-9).join(" ")}`);
+      void this.aside();
+    });
     await on("hear://ended", (e) => void this.ended(e));
     this.enable(this.deps.config.hear.enabled);
   }
@@ -101,7 +119,8 @@ export class Ears {
     const take = decider.called();
 
     mind.interrupt();
-    this.listening = true;
+    trace.log("hear", again ? "his name, while already listening" : "his name");
+    this.begin();
     director.listen(true, { called: !again });
     journal.add("user", "called your name", 0);
 
@@ -115,32 +134,85 @@ export class Ears {
     if (sound) actor.cue(sound);
   }
 
+  /** Now and then, while they are still talking, lets what they have said so far show on him. */
+  private async aside() {
+    const { config, decider, director, now } = this.deps;
+    const s = this.asides;
+    const words = count(this.words.text);
+    if (!this.listening || s.busy) return;
+    const fresh = words - s.judged;
+    const wait = !config.hear.asides
+      ? "off (hear.asides)"
+      : !config.decider.enabled
+        ? "off (decision model disabled)"
+        : s.shown >= ASIDE_MOST
+          ? `${ASIDE_MOST} shown, none left this turn`
+          : words < ASIDE_AFTER_WORDS
+            ? `starts at ${ASIDE_AFTER_WORDS} words, ${words} so far`
+            : fresh < ASIDE_NEW_WORDS
+              ? `${ASIDE_NEW_WORDS - fresh} more words until the next look`
+              : now() - s.judgedAt < ASIDE_EVERY
+                ? "looked a moment ago"
+                : now() - s.shownAt < ASIDE_REST
+                  ? `resting ${(ASIDE_REST - (now() - s.shownAt)).toFixed(1)} s after ${s.last}`
+                  : null;
+    trace.set("aside", wait ?? `asking at ${words} words`);
+    if (wait) return;
+    const call = this.calls;
+    s.busy = true;
+    s.judged = words;
+    s.judgedAt = now();
+    const name = await decider.aside(this.words.text, s.last);
+    s.busy = false;
+    if (!name) return trace.log("aside", `nothing, at ${words} words`);
+    if (call !== this.calls || !this.listening) return trace.log("aside", `${name} came too late: their turn was over`);
+    if (!director.respond(ASIDES[name])) return trace.log("aside", `${name} dropped: he is not in the listening pose`);
+    trace.log("aside", `shows ${name}, at ${words} words`);
+    s.last = name;
+    s.shown++;
+    s.shownAt = now();
+  }
+
   private async ended(e: HearEvents["hear://ended"]) {
     if (!this.listening) return;
     const { director, actor, mind, config } = this.deps;
+    trace.log("hear", e.text ? `turn over: "${e.text}"` : e.spoke ? "turn over: nothing understood" : "turn over: they said nothing");
     if (!e.text) {
       this.relax();
       if (e.spoke) actor.feel("unsure", 2.5);
       return;
     }
     this.listening = false;
+    trace.set("ears", "answering");
     director.hearing = { level: 0, speaking: false };
     const call = this.calls;
     await mind.wake({ kind: "said", text: e.text });
+    trace.log("hear", "he has answered");
     if (call !== this.calls || this.listening) return;
     if (config.hear.followUp <= 0 || !config.hear.enabled) return director.listen(false);
     // He stays with them for a moment: a reply needs no name.
     try {
       await invoke("hear_listen", { seconds: config.hear.followUp });
-      this.listening = true;
+      trace.log("hear", `listening on for ${config.hear.followUp} s, no name needed`);
+      this.begin();
       director.listen(true);
     } catch {
       director.listen(false);
     }
   }
 
+  private begin() {
+    this.listening = true;
+    trace.set("ears", "listening");
+    trace.set("heard", null);
+    trace.set("aside", null);
+    this.words = { text: "", done: null };
+    this.asides = { judged: 0, judgedAt: 0, shownAt: -Infinity, shown: 0, last: null, busy: false };
+  }
+
   private relax() {
     this.listening = false;
+    trace.set("ears", "waiting for his name");
     this.deps.director.listen(false);
   }
 }

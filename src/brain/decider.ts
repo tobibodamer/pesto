@@ -1,6 +1,8 @@
 import type { Config } from "../config";
+import { trace } from "../debug/trace";
 import { postJson } from "../net";
 import type { Actor } from "../pesto/actor";
+import type { ListenMove } from "../pesto/listening";
 import { random } from "../pesto/math";
 import type { Emotion } from "../pesto/pose";
 import type { World } from "../world/world";
@@ -47,6 +49,54 @@ const FEELINGS: Partial<Record<Emotion, string>> = {
   unsure: "does not know what to make of it",
 };
 
+type Aside = { describe: string; move?: ListenMove; emotion?: Emotion; seconds?: number };
+
+/**
+ * What he can do while someone is still talking to him, without interrupting
+ * them: a face, a small movement, or both. All of it is silent. Each says
+ * what kind of sentence brings it on and then what he does, in that order
+ * and without hedging: the model sorts what was said far more surely than it
+ * judges whether he would react, and how sure it has to be is decided here.
+ */
+export const ASIDES: Record<string, Aside> = {
+  none: { describe: "An ordinary request, question, greeting or remark, so he just keeps listening." },
+  nod: { describe: "They explain their reasons or make a fair point, so he nods.", move: "nod" },
+  intrigued: { describe: "Food, a treat or a secret, so he leans in.", move: "lean", emotion: "curious" },
+  puzzled: { describe: "Confusing or self-contradicting, so he tilts his head.", move: "puzzle", emotion: "unsure", seconds: 2.5 },
+  pondering: { describe: "A riddle or a hard question for him, so he looks up, thinking.", emotion: "thinking", seconds: 3 },
+  attentive: { describe: "Exact codes, numbers or steps to remember, so he concentrates.", emotion: "focused", seconds: 3.5 },
+  overwhelmed: { describe: "A flood of jargon or tangled technical detail, so his head spins.", emotion: "dizzy", seconds: 3 },
+  amused: { describe: "A funny thing that happened, so he grins.", emotion: "happy", seconds: 2.5 },
+  content: { describe: "They say they like him, so he settles, pleased.", emotion: "pleased", seconds: 3 },
+  delighted: { describe: "Really good news, so he lights up.", emotion: "delighted", seconds: 2.5 },
+  proud: { describe: "Praise or thanks for him, so he preens.", emotion: "proud", seconds: 3 },
+  smug: { describe: "They admit he was right or that they made a silly mistake, so he smirks.", emotion: "smug", seconds: 3 },
+  deadpan: { describe: "A worn-out joke or a bad pun, so he stares blankly.", emotion: "neutral", seconds: 2.5 },
+  sorry: { describe: "Sad news, a loss or a death, so his ears droop.", emotion: "sad", seconds: 4 },
+  wincing: { describe: "They hurt themselves, or something gross, so he winces.", emotion: "strained", seconds: 2.5 },
+  alarmed: { describe: "Sudden danger, a disaster or an accident, so he pulls back, wide-eyed.", move: "recoil", emotion: "surprised", seconds: 2 },
+  worried: { describe: "They are in trouble or afraid of what is coming, so he looks anxious.", emotion: "scared", seconds: 3 },
+  disapproving: { describe: "A plan that is clearly a bad idea, so he shakes his head.", move: "shake", emotion: "annoyed", seconds: 2.5 },
+  offended: { describe: "An insult to him, his can or raccoons, so he glares.", emotion: "glare", seconds: 3 },
+  grumpy: { describe: "Nagging, or a chore for him, so he scowls.", emotion: "grumpy", seconds: 3 },
+  guilty: { describe: "They accuse him of doing or breaking something, so he looks caught out.", emotion: "guilty", seconds: 3.5 },
+  bored: { describe: "Rambling about something dull, so his eyelids sag.", emotion: "sleepy", seconds: 3.5 },
+  dozing: { describe: "Endless tedious droning, so he nods off.", emotion: "asleep", seconds: 2 },
+};
+
+/** The share of the model's answer a reaction needs before he shows it. Lower makes him livelier, higher stiller. */
+const ASIDE_AT_LEAST = 0.45;
+
+/** An answer in a few words: the likeliest choices with their share, or the number. */
+function brief(a: Answer): string {
+  if (a.type === "noul") return a.noul.toFixed(2);
+  return Object.entries(a.probabilities)
+    .sort((x, y) => y[1] - x[1])
+    .slice(0, 3)
+    .map(([name, p]) => `${name} ${p.toFixed(2)}`)
+    .join(", ");
+}
+
 /** How he pesters someone who is procrastinating, one rung at a time. */
 const LADDER = ["none", "peek", "approach", "knock", "sign", "speak"] as const;
 
@@ -64,6 +114,7 @@ export class Decider {
   private cooling = 0;
   private inFlight = false;
   private failures = 0;
+  private asked = { count: 0, ms: 0, failed: 0 };
   private rung = 0;
   private rungHeld = 0;
   private slackSince = 0;
@@ -169,7 +220,7 @@ export class Decider {
     this.inFlight = true;
     let res: SystemOneResponse;
     try {
-      res = await postJson<SystemOneResponse>(`${config.decider.baseUrl.replace(/\/$/, "")}/v1/systemone`, { model: config.decider.model, state, questions });
+      res = { answers: await this.ask("react", state, questions) };
       this.failures = 0;
     } catch (err) {
       if (/context length/i.test(String(err)) && this.recall > 0) {
@@ -183,7 +234,6 @@ export class Decider {
     } finally {
       this.inFlight = false;
     }
-    this.last = { at: this.deps.now(), state, answers: res.answers };
 
     const a = res.answers;
     const feeling = a.feeling?.type === "choice" && a.feeling.confidence > 0.38 ? (a.feeling.choice as Emotion) : null;
@@ -202,6 +252,7 @@ export class Decider {
       if (this.rung === 0 || this.rungHeld > 50) {
         this.rung = Math.min(LADDER.length - 1, this.rung + 1);
         this.rungHeld = 0;
+        trace.log("decider", `→ pester: ${LADDER[this.rung]}${free ? "" : ", but he is busy"}`);
         if (free) await this.pester(LADDER[this.rung], target);
       }
       return;
@@ -219,16 +270,43 @@ export class Decider {
 
     const mayWake = mind.configured && this.deps.now() - mind.lastSpokeAt > config.mind.quietSeconds;
     if (speak > config.decider.speakAbove && mayWake && this.trigger) {
+      trace.log("decider", `→ speaks up about: ${this.trigger.text}`);
       void mind.wake({ kind: "event", why: this.trigger.text });
       return;
     }
 
-    if (!free) return;
+    if (!free) return trace.log("decider", "→ nothing: he is busy");
     const choice = a.reaction?.type === "choice" ? sample(a.reaction.probabilities) : "none";
+    trace.log("decider", `→ ${choice}${feeling ? `, feeling ${feeling}` : ""}`);
     if (choice !== "none" && choice in reactions) {
       void director.perform(choice as ReactionName, { target, emotion: feeling ?? undefined });
     } else if (feeling && feeling !== "neutral" && (out || this.deps.director.can.eyes)) {
       void director.perform("emote", { emotion: feeling, seconds: 3 });
+    }
+  }
+
+  /**
+   * What, if anything, shows on him at what they have said so far, while they
+   * are still talking. Null means keep listening as he was, which it mostly is.
+   */
+  async aside(soFar: string, last: string | null): Promise<string | null> {
+    const { config } = this.deps;
+    if (!config.decider.enabled || this.failures >= 5) return null;
+    const state = [
+      "Pesto is a pet raccoon living in a trash can on this person's desktop: nosy, cheeky and judgmental, but he cares about them.",
+      "The person is talking to him and he is listening.",
+      `They said: "${soFar.split(/\s+/).slice(-45).join(" ")}"`,
+    ].join("\n");
+    const criteria = Object.fromEntries(Object.entries(ASIDES).filter(([name]) => name !== last).map(([name, a]) => [name, a.describe]));
+    const questions: Record<string, Question> = { aside: { type: "choice", instructions: "How does Pesto react to what they just said?", criteria } };
+    try {
+      const { aside } = await this.ask("aside", state, questions);
+      if (aside?.type !== "choice") return null;
+      const [name, share] = Object.entries(aside.probabilities).sort((x, y) => y[1] - x[1])[0] ?? ["none", 0];
+      return name !== "none" && name in ASIDES && share >= ASIDE_AT_LEAST ? name : null;
+    } catch (err) {
+      console.warn(`decider: ${err}`);
+      return null;
     }
   }
 
@@ -258,7 +336,7 @@ export class Decider {
       feeling: { type: "choice", instructions: "What does Pesto feel about being called right now?", criteria: FEELINGS as Record<string, string> },
     };
     try {
-      const { answers: a } = await postJson<SystemOneResponse>(`${config.decider.baseUrl.replace(/\/$/, "")}/v1/systemone`, { model: config.decider.model, state, questions });
+      const a = await this.ask("called", state, questions);
       const sound = a.sound?.type === "choice" ? sample(a.sound.probabilities) : "huh";
       return {
         sound: sound === "none" ? null : sound,
@@ -266,6 +344,28 @@ export class Decider {
       };
     } catch {
       return null;
+    }
+  }
+
+  /** One request to the decision model, timed and traced. */
+  private async ask(what: string, state: string, questions: Record<string, Question>): Promise<Record<string, Answer>> {
+    const { config } = this.deps;
+    const started = performance.now();
+    const took = () => `${Math.round(performance.now() - started)} ms`;
+    try {
+      const { answers } = await postJson<SystemOneResponse>(`${config.decider.baseUrl.replace(/\/$/, "")}/v1/systemone`, { model: config.decider.model, state, questions });
+      this.last = { at: this.deps.now(), state, answers };
+      this.asked.count++;
+      this.asked.ms += performance.now() - started;
+      trace.log("decider", `${what} ${took()}  ${Object.entries(answers).map(([name, a]) => `${name}: ${brief(a)}`).join("  |  ")}`);
+      return answers;
+    } catch (err) {
+      this.asked.failed++;
+      trace.log("decider", `${what} failed after ${took()}: ${err}`);
+      throw err;
+    } finally {
+      const { count, ms, failed } = this.asked;
+      trace.set("decider", `${count} answers, ${count ? Math.round(ms / count) : 0} ms on average, ${failed} failed`);
     }
   }
 

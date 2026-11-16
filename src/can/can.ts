@@ -227,12 +227,13 @@ export class Can {
     } else {
       if (this.opening > 0.012) {
         this.gapPath(ctx);
-        ctx.fillStyle = DARK;
+        // The darkness thins out toward the open left side of the gap.
+        const left = -CAN.topHalf - 2;
+        const shade = ctx.createLinearGradient(left, 0, left + 26, 0);
+        shade.addColorStop(0, "rgba(12, 12, 16, 0)");
+        shade.addColorStop(1, DARK);
+        ctx.fillStyle = shade;
         ctx.fill();
-        ctx.lineJoin = "round";
-        ctx.lineWidth = LINE;
-        ctx.strokeStyle = INK;
-        ctx.stroke();
         if (this.eyes && drawEyes && this.opening > 0.05) {
           ctx.save();
           this.gapPath(ctx);

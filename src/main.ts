@@ -3,6 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { Decider } from "./brain/decider";
 import { Journal } from "./brain/journal";
 import { Mind } from "./brain/mind";
+import { DebugPanel } from "./debug/panel";
+import { trace } from "./debug/trace";
 import { absorb, loadConfig, saveConfig, type Config, type Patch } from "./config";
 import { Ears } from "./hear/ears";
 import { connectSenses, holdInteractive, setHitRegions } from "./sense/bridge";
@@ -41,11 +43,15 @@ function apply(patch: Patch<Config>) {
   if (patch.hear) ears.enable(config.hear.enabled);
   if (patch.voice) voice.rebuild();
   if (patch.decider) decider.retry();
+  if (patch.debug) trace.enable(config.debug.panel);
   if (patch.body) {
     stage.size = config.body.scale;
     stage.stickerBorder = config.body.border;
   }
 }
+trace.enable(config.debug.panel);
+const debugPanel = new DebugPanel(root, world, actor);
+
 function change(patch: Patch<Config>) {
   apply(patch);
   void saveConfig(patch);
@@ -93,6 +99,7 @@ window.addEventListener("contextmenu", (e) => {
     toggle("Captions", config.voice.captions, (on) => change({ voice: { captions: on } })),
     toggle("Reactions", config.decider.enabled, (on) => change({ decider: { enabled: on } })),
     toggle("Sticker border", config.body.border > 0, (on) => change({ body: { border: on ? 1.5 : 0 } })),
+    toggle("Debug", config.debug.panel, (on) => change({ debug: { panel: on } })),
     { label: "Settings…", divide: true, action: () => void invoke("settings_open") },
     { label: "Quit", action: () => void invoke("app_quit") },
   ]);
@@ -115,6 +122,7 @@ function frame(t: number) {
   journal.update(dt);
   decider.update(dt);
   stage.render();
+  debugPanel.update();
   voice.place(actor.visible ? actor.toWorld(actor.puppet.anchors?.mouth ?? { x: 0, y: -110 }) : stage.crown, !actor.visible);
   setHitRegions(stage.hitRegions());
   holdInteractive(actor.mode === "held" || stage.carrying);
@@ -127,6 +135,7 @@ requestAnimationFrame(frame);
 //   pesto.say("what am I doing?")     talk to him
 //   pesto.director.perform("dance")   make him do something
 //   pesto.decider.last                the last silent decision and why
+//   pesto.trace.lines                 what his ears and the decision model did, while Debug is on
 Object.assign(window, {
-  pesto: { stage, world, actor, director, journal, mind, decider, ears, config, say: (text: string) => mind.wake({ kind: "said", text }) },
+  pesto: { stage, world, actor, director, journal, mind, decider, ears, config, trace, say: (text: string) => mind.wake({ kind: "said", text }) },
 });

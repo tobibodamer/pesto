@@ -1,9 +1,9 @@
 import { CAN, LID_PEEK, type Can } from "../can/can";
 import type { Actor } from "../pesto/actor";
 import { chance, clamp, pick, rand } from "../pesto/math";
-import { listening, type Hearing } from "../pesto/listening";
+import { listening, type Hearing, type ListenMove, type ListenPose } from "../pesto/listening";
 import * as moves from "../pesto/moves";
-import type { Emotion, Pose } from "../pesto/pose";
+import type { Emotion } from "../pesto/pose";
 import { until, wait, type Routine } from "../pesto/routine";
 import type { Litter } from "../stage/litter";
 import type { Ledge, World } from "../world/world";
@@ -265,7 +265,9 @@ export class Director {
   hearing: Hearing = { level: 0, speaking: false };
 
   private attentive = false;
-  private listenPose: ((p: Pose, dt: number) => void) | null = null;
+  private listenPose: ListenPose | null = null;
+  /** Seconds until a face he pulled at what they said gives way to plain attention again. */
+  private faceFor = 0;
   private listenedFor = 0;
   private jolted = false;
   private grabbedAt = -Infinity;
@@ -387,6 +389,7 @@ export class Director {
     if (on) {
       a.stop();
       this.listenedFor = 0;
+      this.faceFor = 0;
       this.jolted = !!opts.called;
       a.gesture = this.listenPose = listening(() => this.hearing, this.jolted);
       if (a.mode === "can") {
@@ -408,6 +411,21 @@ export class Director {
     }
     a.look({ kind: "user" }, on ? 600 : 1);
     a.feel("curious", on ? 600 : 0.6);
+  }
+
+  /**
+   * A small reaction to what they are saying, made without leaving the
+   * listening pose. Does nothing and returns false unless he is in it.
+   */
+  respond(reaction: { move?: ListenMove; emotion?: Emotion; seconds?: number }): boolean {
+    const a = this.actor;
+    if (!this.attentive || !this.listenPose || a.gesture !== this.listenPose) return false;
+    if (reaction.move) this.listenPose.react(reaction.move);
+    if (reaction.emotion) {
+      this.faceFor = reaction.seconds ?? 3;
+      a.feel(reaction.emotion, 600);
+    }
+    return true;
   }
 
   /**
@@ -527,6 +545,7 @@ export class Director {
       }
     }
 
+    if (this.faceFor > 0 && (this.faceFor -= dt) <= 0 && this.attentive && a.gesture === this.listenPose) a.feel("curious", 600);
     if (this.attentive && a.mode === "can" && !a.busy) {
       // The lid flies up at his name, then rides on their voice.
       this.listenedFor += dt;
