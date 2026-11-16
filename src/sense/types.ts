@@ -165,5 +165,7 @@ export interface SenseCommands {
   overlay_hold_interactive(args: { hold: boolean }): void;
   /** The big structural parts of a window (toolbars, tab strips, panes), from a scan bounded to about 150 ms. */
   window_skeleton(args: { hwnd: number }): (Rect & { kind: string })[];
+  /** The named controls and texts visible in a window, its own bars and buttons first, from a scan bounded to about 700 ms. */
+  window_elements(args: { hwnd: number }): (Rect & { kind: string; name: string })[];
   app_quit(): void;
 }

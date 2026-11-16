@@ -85,6 +85,7 @@ pub fn run() {
             hear::hear_feed,
             sense_snapshot,
             sense::skeleton::window_skeleton,
+            sense::elements::window_elements,
             overlay_set_hit_regions,
             overlay_hold_interactive,
             app_quit,

@@ -9,7 +9,7 @@ use windows::Win32::System::Com::{
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomation2, IUIAutomationCacheRequest, IUIAutomationElement,
     IUIAutomationTreeWalker, UIA_BoundingRectanglePropertyId, UIA_ControlTypePropertyId,
-    UIA_IsOffscreenPropertyId,
+    UIA_IsOffscreenPropertyId, UIA_NamePropertyId,
 };
 
 use serde::Serialize;
@@ -57,10 +57,13 @@ fn container(id: i32) -> bool {
     matches!(id, 50025 | 50026 | 50030 | 50032 | 50033 | 50018 | 50021)
 }
 
-struct Uia {
-    automation: IUIAutomation,
-    walker: IUIAutomationTreeWalker,
-    cache: IUIAutomationCacheRequest,
+pub(super) struct Uia {
+    pub automation: IUIAutomation,
+    pub walker: IUIAutomationTreeWalker,
+    /// Fetches where an element is and what kind it is along with the element itself.
+    pub cache: IUIAutomationCacheRequest,
+    /// The same, and its name.
+    pub named: IUIAutomationCacheRequest,
 }
 
 thread_local! {
@@ -79,12 +82,28 @@ fn connect() -> windows::core::Result<Uia> {
         cache.AddProperty(UIA_BoundingRectanglePropertyId)?;
         cache.AddProperty(UIA_ControlTypePropertyId)?;
         cache.AddProperty(UIA_IsOffscreenPropertyId)?;
+        let named = automation.CreateCacheRequest()?;
+        named.AddProperty(UIA_BoundingRectanglePropertyId)?;
+        named.AddProperty(UIA_ControlTypePropertyId)?;
+        named.AddProperty(UIA_IsOffscreenPropertyId)?;
+        named.AddProperty(UIA_NamePropertyId)?;
         let walker = automation.ControlViewWalker()?;
-        Ok(Uia { automation, walker, cache })
+        Ok(Uia { automation, walker, cache, named })
     }
 }
 
-fn rect_of(e: &IUIAutomationElement) -> Option<Rect> {
+/// Runs `f` with this thread's UI Automation connection, making it on first use.
+pub(super) fn with_uia<T>(f: impl FnOnce(&Uia) -> windows::core::Result<T>) -> Result<T, String> {
+    UIA.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.is_none() {
+            *slot = Some(connect().map_err(|e| e.to_string())?);
+        }
+        f(slot.as_ref().unwrap()).map_err(|e| e.to_string())
+    })
+}
+
+pub(super) fn rect_of(e: &IUIAutomationElement) -> Option<Rect> {
     let r = unsafe { e.CachedBoundingRectangle() }.ok()?;
     Some(Rect { x: r.left, y: r.top, w: r.right - r.left, h: r.bottom - r.top })
 }
@@ -128,15 +147,7 @@ fn scan(uia: &Uia, hwnd: i64) -> windows::core::Result<Vec<Part>> {
 /// Bounded in depth, node count and time, so it is safe to call whenever he needs to know.
 #[tauri::command]
 pub async fn window_skeleton(hwnd: i64) -> Result<Vec<Part>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        UIA.with(|cell| {
-            let mut slot = cell.borrow_mut();
-            if slot.is_none() {
-                *slot = Some(connect().map_err(|e| e.to_string())?);
-            }
-            scan(slot.as_ref().unwrap(), hwnd).map_err(|e| e.to_string())
-        })
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || with_uia(|uia| scan(uia, hwnd)))
+        .await
+        .map_err(|e| e.to_string())?
 }

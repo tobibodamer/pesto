@@ -277,6 +277,44 @@ const SCENARIOS: Record<string, Scenario> = {
       at(t, 8.6, () => void s.director.perform("toss"));
     },
   },
+  // Showing a spot: a finger on it from the ledge beside it, the straw when it is further off, the straw from afar.
+  tap: {
+    zoom: 3,
+    frames: [3.0, 3.25, 3.4, 3.55, 3.7, 4.3, 6.3, 6.45, 6.6, 6.75, 7.4, 9.6],
+    script: (s, t, first) => {
+      if (first) {
+        s.director.autonomous = false;
+        s.director.onTouch = (at) => marks.push({ ...at, t: s.world.time });
+        void s.director.perform("tap", { target: { x: 1040, y: 715 } });
+      }
+      at(t, 6, () => void s.director.perform("tap", { target: { x: 1150, y: 640 } }));
+      at(t, 9, () => void s.director.perform("point", { target: { x: 1010, y: 610 } }));
+    },
+  },
+  // A spot in the middle of a window, with no ledge near it: up the glass, tap, and down again.
+  cling: {
+    zoom: 2,
+    frames: [1.5, 3.0, 4.0, 5.0, 5.6, 5.9, 6.1, 6.3, 6.6, 7.4, 8.4, 9.4],
+    script: (s, t, first) => {
+      if (first) {
+        s.director.autonomous = false;
+        s.director.onTouch = (at) => marks.push({ ...at, t: s.world.time });
+        void s.director.perform("tap", { target: { window: 2, at: { x: 210, y: 230 } } });
+      }
+    },
+  },
+  // The paper ball: wind up, throw, the bounce off the spot, and where it ends up.
+  throw: {
+    zoom: 1,
+    frames: [1.75, 1.95, 2.02, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.8, 3.4, 4.6],
+    script: (s, t, first) => {
+      if (first) {
+        s.director.autonomous = false;
+        s.director.onTouch = (at) => marks.push({ ...at, t: s.world.time });
+        void s.director.perform("throw", { target: { window: 1, at: { x: 300, y: 150 } } });
+      }
+    },
+  },
   idle: {
     frames: [2, 6, 10, 14, 18, 24, 30, 38, 46, 54, 62, 70],
     script: (s, t, first) => {
@@ -305,6 +343,9 @@ const SCENARIOS: Record<string, Scenario> = {
     },
   },
 };
+
+/** Where he touched the glass in the tile being filmed, for scenarios that record it. */
+let marks: { x: number; y: number; t: number }[] = [];
 
 const name = window.SHEET ?? "emerge";
 const scenario = SCENARIOS[name];
@@ -339,6 +380,7 @@ for (const frameAt of scenario.frames) {
   desk.appendChild(root);
 
   seed(1234);
+  marks = [];
   const stage = new Stage(root);
   stage.director.hour = () => 14;
   stage.world.setMonitors({
@@ -367,6 +409,14 @@ for (const frameAt of scenario.frames) {
   const fx = zoom > 1 ? Math.min(0, Math.max(tileW - W * k, tileW / 2 - stage.actor.x * k)) : 0;
   const fy = zoom > 1 ? Math.min(0, Math.max(tileH - H * k, tileH * 0.62 - stage.actor.y * k)) : 0;
   desk.style.transform = `translate(${fx}px, ${fy}px) scale(${k})`;
+
+  // A cross on every spot he has touched: red while the touch is fresh.
+  for (const m of marks) {
+    const cross = document.createElement("div");
+    const fresh = stage.world.time - m.t < 0.3;
+    cross.style.cssText = `position:absolute;left:${m.x - 6}px;top:${m.y - 6}px;width:12px;height:12px;z-index:8;background:linear-gradient(${fresh ? "#ff3d5a" : "#0008"},${fresh ? "#ff3d5a" : "#0008"}) 50%/2px 100% no-repeat,linear-gradient(${fresh ? "#ff3d5a" : "#0008"},${fresh ? "#ff3d5a" : "#0008"}) 50%/100% 2px no-repeat`;
+    desk.appendChild(cross);
+  }
 
   const cur = document.createElement("div");
   cur.style.cssText = `position:absolute;left:${stage.world.cursor.x - 5}px;top:${stage.world.cursor.y - 5}px;width:10px;height:10px;border-radius:50%;background:${stage.world.cursor.buttons ? "#ff3d5a" : "#fff"};outline:2px solid #000;z-index:9`;

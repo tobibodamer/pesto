@@ -6,6 +6,7 @@ import { World } from "../world/world";
 import { Paper } from "./bubble";
 import { Litter, drawJunk, type Junk } from "./litter";
 import { Menu } from "./menu";
+import { Ping } from "./ping";
 import { Sprite } from "./sprite";
 
 const PAD = 14;
@@ -74,6 +75,7 @@ export class Stage {
 
   readonly paper: Paper;
   readonly menu: Menu;
+  private ping: Ping;
 
   private pesto!: Sprite;
   private canBack!: Sprite;
@@ -95,6 +97,8 @@ export class Stage {
     this.resize(options.scale ?? this.actor.scale, options.can ?? 1);
     this.paper = new Paper(root);
     this.menu = new Menu(root);
+    this.ping = new Ping(root);
+    this.director.onTouch = (at) => this.ping.at(at.x - this.world.virtual.x, at.y - this.world.virtual.y, this.actor.scale);
     this.world.on("monitors", () => this.placeCan());
     this.world.on("mouseDown", (e) => {
       const m = this.menu.rect;

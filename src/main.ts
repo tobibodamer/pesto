@@ -8,6 +8,7 @@ import { trace } from "./debug/trace";
 import { absorb, loadConfig, saveConfig, type Config, type Patch } from "./config";
 import { Ears } from "./hear/ears";
 import { connectSenses, holdInteractive, setHitRegions } from "./sense/bridge";
+import { Sight } from "./sense/sight";
 import { Surveyor } from "./sense/skeleton";
 import { Stage } from "./stage/stage";
 import { ConfiguredVoice } from "./voice/create";
@@ -30,7 +31,8 @@ await connectSenses(world);
 const now = () => world.time;
 const voice = new ConfiguredVoice(config, world);
 const journal = new Journal(world, actor);
-const mind = new Mind({ config, journal, director, actor, voice, paper, now });
+const sight = new Sight(world);
+const mind = new Mind({ config, journal, director, actor, voice, paper, sight, now });
 const decider = new Decider({ config, world, journal, director, actor, mind, now });
 const ears = new Ears({ config, director, actor, journal, mind, decider, paper, now });
 await ears.connect();
@@ -63,6 +65,8 @@ const surveyor = new Surveyor(world);
 actor.on("grabbed", () => surveyor.wantAt(world.cursor.x, world.cursor.y));
 actor.on("landed", () => surveyor.wantAt(actor.x, actor.y + 4));
 director.onScout = (monitor) => surveyor.wantAround(monitor);
+// A window he reads he may be about to walk into.
+sight.onLook = (hwnd) => surveyor.want(hwnd);
 setInterval(() => {
   if (actor.mode === "held") surveyor.wantAt(actor.x, actor.y);
 }, 250);
@@ -134,8 +138,10 @@ requestAnimationFrame(frame);
 // For the devtools console while developing:
 //   pesto.say("what am I doing?")     talk to him
 //   pesto.director.perform("dance")   make him do something
+//   pesto.director.perform("tap", { target: "cursor" })   or "throw", or "point"
+//   pesto.sight.look(pesto.world.foreground)              what he can see inside a window
 //   pesto.decider.last                the last silent decision and why
 //   pesto.trace.lines                 what his ears and the decision model did, while Debug is on
 Object.assign(window, {
-  pesto: { stage, world, actor, director, journal, mind, decider, ears, config, trace, say: (text: string) => mind.wake({ kind: "said", text }) },
+  pesto: { stage, world, actor, director, journal, mind, decider, ears, sight, config, trace, say: (text: string) => mind.wake({ kind: "said", text }) },
 });

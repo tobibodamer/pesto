@@ -1,15 +1,16 @@
 import { CAN, LID_PEEK, type Can } from "../can/can";
 import type { Actor } from "../pesto/actor";
-import { chance, clamp, pick, rand } from "../pesto/math";
+import { chance, clamp, pick, rand, sign } from "../pesto/math";
 import { listening, type Hearing, type ListenMove, type ListenPose } from "../pesto/listening";
 import * as moves from "../pesto/moves";
 import type { Emotion } from "../pesto/pose";
 import { until, wait, type Routine } from "../pesto/routine";
+import * as show from "../pesto/show";
 import type { Litter } from "../stage/litter";
 import type { Ledge, World } from "../world/world";
 
-/** Where a reaction is aimed. */
-export type Target = { x: number; y: number } | { window: number } | "cursor" | "user";
+/** Where a reaction is aimed. A window alone means the middle of its top; `at` is a spot inside it, from its top-left corner. */
+export type Target = { x: number; y: number } | { window: number; at?: { x: number; y: number } } | "cursor" | "user";
 
 export interface ReactionArgs {
   target?: Target;
@@ -207,10 +208,28 @@ export const REACTIONS = {
     now: (d, args) => d.actor.feel(args.emotion ?? "curious", args.seconds ?? 2.5),
   },
   point: {
-    describe: "Point at the target from where he stands, glancing between it and the person.",
+    describe: "Point at the target from where he stands, glancing between it and the person: with his whole arm from afar, with the tip of his bent straw on it when it is close.",
     run: function* (d, args) {
       const p = d.resolve(args.target);
-      if (p) yield* moves.pointAt(d.actor, p.x, p.y, args.seconds ?? 2.4);
+      if (!p) return;
+      if (show.within(d.actor, p.x, p.y)) yield* show.indicate(d.actor, () => d.resolve(args.target), { hold: args.seconds ?? 2.4, onTouch: (at) => d.onTouch?.(at) });
+      else yield* moves.pointAt(d.actor, p.x, p.y, args.seconds ?? 2.4);
+    },
+  },
+  tap: {
+    describe: "Go right up to the target, tap it twice with a finger, or with his straw when it is just out of reach, and look back to check the person saw. Shows exactly which thing he means.",
+    run: function* (d, args) {
+      const p = d.resolve(args.target);
+      if (!p) return;
+      yield* d.reach(p.x, p.y);
+      yield* show.indicate(d.actor, () => d.resolve(args.target), { taps: 2, hold: args.seconds ?? 1, onTouch: (at) => d.onTouch?.(at) });
+    },
+  },
+  throw: {
+    describe: "Throw a crumpled paper ball that bounces off the glass exactly at the target, from where he stands. Precise at any distance, and cheeky.",
+    run: function* (d, args) {
+      const p = d.resolve(args.target);
+      if (p) yield* show.throwBall(d.actor, d.litter, p.x, p.y);
     },
   },
   knock: {
@@ -245,8 +264,10 @@ export const REACTION_NAMES = Object.keys(REACTIONS) as ReactionName[];
 
 /** Reactions that only make sense once he is out of the can. */
 const NEEDS_BODY = new Set<ReactionName>([
-  "wander", "approach", "sit", "lounge", "groom", "point", "knock", "sign", "wave", "shrug", "nod", "ponder", "clap", "flop", "dance", "startle", "swat", "yawn", "sniff",
+  "wander", "approach", "sit", "lounge", "groom", "point", "tap", "throw", "knock", "sign", "wave", "shrug", "nod", "ponder", "clap", "flop", "dance", "startle", "swat", "yawn", "sniff",
 ]);
+/** Reactions he can do while clinging to the glass, without coming down first. */
+const FROM_GLASS = new Set<ReactionName>(["point", "tap"]);
 
 /**
  * Decides what Pesto does with himself. On its own it only runs his idle
@@ -260,6 +281,8 @@ export class Director {
   hour = () => new Date().getHours();
   /** Called for every reaction he performs, whoever asked for it. */
   onPerform: ((name: ReactionName, args: ReactionArgs) => void) | null = null;
+  /** Called with the exact spot each time he touches the glass to show something: a fingertip, the straw, a paper ball. */
+  onTouch: ((at: { x: number; y: number }) => void) | null = null;
 
   /** What the microphone hears of the person, kept current by the ears while he listens. */
   hearing: Hearing = { level: 0, speaking: false };
@@ -293,6 +316,10 @@ export class Director {
   ) {
     const a = actor;
     litter.onLand = (junk) => junk.kind === "tin" && a.cue("clank");
+    litter.onHit = (junk) => {
+      a.cue("land");
+      this.onTouch?.(junk);
+    };
     // Clicked while he hangs on the rim, he drops back inside.
     world.on("mouseDown", (e) => {
       const hit = a.hitRect;
@@ -453,7 +480,7 @@ export class Director {
       (function* () {
         if (NEEDS_BODY.has(name)) {
           if (d.actor.mode === "can" || d.actor.mode === "emerge") yield* moves.exitCan(d.actor, { quick: true });
-          if (d.actor.mode === "air" || d.actor.mode === "glass") yield* until(() => d.actor.mode === "ground", 12);
+          if (d.actor.mode === "air" || (d.actor.mode === "glass" && !FROM_GLASS.has(name))) yield* until(() => d.actor.mode === "ground", 12);
         }
         yield* run(d, args);
       })(),
@@ -466,7 +493,8 @@ export class Director {
     if (target === "cursor") return { x: this.world.cursor.x, y: this.world.cursor.y };
     if ("window" in target) {
       const w = this.world.window(target.window);
-      return w ? { x: w.rect.x + w.rect.w / 2, y: w.rect.y + 20 } : null;
+      if (!w) return null;
+      return target.at ? { x: w.rect.x + target.at.x, y: w.rect.y + target.at.y } : { x: w.rect.x + w.rect.w / 2, y: w.rect.y + 20 };
     }
     return target;
   }
@@ -481,6 +509,62 @@ export class Director {
     const side = a.x < x ? -1 : 1;
     yield* moves.travel(a, ledge.id, clamp(x + side * 60 * a.scale, ledge.x1 + 20, ledge.x2 - 20));
     a.dir = -side;
+  }
+
+  /**
+   * Gets a spot within reach of his finger or his straw: onto a ledge beside
+   * it if there is one, otherwise up the glass to it, where he clings.
+   */
+  *reach(x: number, y: number): Routine {
+    const a = this.actor;
+    const s = a.scale;
+    if (show.within(a, x, y)) return;
+    if (a.mode === "glass") {
+      a.gripLocked = false;
+      a.grip = 0;
+      yield* until(() => a.mode === "ground", 10);
+    }
+    const stand = this.standFor(x, y);
+    if (stand) {
+      yield* moves.travel(a, stand.ledge.id, stand.x);
+      a.dir = sign(x - a.x);
+      return;
+    }
+    const floor = this.world.ledgeBelow(x, y) ?? this.world.ledgeBelow(x, -1e9);
+    if (!floor) return;
+    // Up the side of it he is coming from, so he does not climb across what he is about to show.
+    const side = a.x < x ? -1 : 1;
+    const v = this.world.virtual;
+    const cx = clamp(x + side * 64 * s, v.x + 50 * s, v.x + v.w - 50 * s);
+    yield* moves.travel(a, floor.id, clamp(cx, floor.x1 + 20, floor.x2 - 20));
+    const cy = y + 66 * s;
+    if (cy < floor.y - 20 * s) yield* moves.climbTo(a, cx, cy);
+  }
+
+  /** Where on a ledge he could stand to touch a spot: the nearest such place to him, or null when no ledge is close enough to it. */
+  private standFor(x: number, y: number): { ledge: Ledge; x: number } | null {
+    const a = this.actor;
+    const s = a.scale;
+    let best: { ledge: Ledge; x: number } | null = null;
+    let bestCost = Infinity;
+    for (const ledge of this.world.ledges) {
+      // How far above his shoulder the spot would be, in units.
+      const up = (ledge.y - y) / s - 56;
+      if (Math.abs(up) > show.STRAW_REACH * 0.85) continue;
+      // A finger if it will do, so that his arm is almost straight; otherwise the straw with some length to spare.
+      const far = Math.abs(up) > show.FINGER_REACH * 0.9 ? show.STRAW_REACH * 0.85 : show.FINGER_REACH * 0.94;
+      const out = (Math.max(Math.sqrt(Math.max(0, far * far - up * up)), up > 95 ? 14 : 30) + 21) * s;
+      for (const side of [-1, 1]) {
+        const at = x + side * out;
+        if (at < ledge.x1 + 20 || at > ledge.x2 - 20) continue;
+        const cost = Math.abs(at - a.x) + Math.abs(ledge.y - a.y) * 2;
+        if (cost < bestCost) {
+          bestCost = cost;
+          best = { ledge, x: at };
+        }
+      }
+    }
+    return best;
   }
 
   /** A place worth walking to: usually a ledge on the monitor the person is working on. */

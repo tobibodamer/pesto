@@ -1,5 +1,6 @@
 import type { Actor } from "../pesto/actor";
 import { EMOTIONS, type Emotion } from "../pesto/pose";
+import type { Sight } from "../sense/sight";
 import type { Paper } from "../stage/bubble";
 import { spokenText, type Line, type Utterance, type Voice } from "../voice/voice";
 import { REACTIONS, type Director, type ReactionName, type Target } from "./director";
@@ -10,6 +11,7 @@ export interface PerformanceDeps {
   actor: Actor;
   voice: Voice;
   paper: Paper;
+  sight: Sight;
   /** Short window ids (w1, w2, …) from the snapshot the script was written against. */
   windowIds: Map<string, number>;
   captions: boolean;
@@ -97,6 +99,8 @@ export class Performance {
     if (!value) return undefined;
     if (value === "cursor" || value === "user") return value;
     if (value === "can") return { x: this.deps.director.can.x, y: this.deps.director.can.y - 60 };
+    if (value === "focus") return this.deps.director.world.actionPoint ?? undefined;
+    if (/^e\d+$/.test(value)) return this.deps.sight.locate(value) ?? undefined;
     const hwnd = this.deps.windowIds.get(value);
     if (hwnd != null) return { window: hwnd };
     const m = /^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/.exec(value);
@@ -129,8 +133,17 @@ export class Performance {
     const reaction = (ALIASES[name] ?? name) as ReactionName;
     if (!(reaction in REACTIONS)) return;
     const emotion = a.as && a.as in EMOTIONS ? (a.as as Emotion) : undefined;
-    this.did.push(describeDirection(name, a));
+    this.did.push(this.describe(name, a));
     await director.perform(reaction, { target: this.target(a.at ?? a.to), emotion, seconds });
+  }
+
+  /** A direction as a line for the journal, with the things he saw named instead of numbered. */
+  private describe(name: string, attrs: Record<string, string>) {
+    const bits = Object.entries(attrs).map(([k, v]) => {
+      const seen = this.deps.sight.get(v);
+      return `${k} ${seen ? `${seen.kind}${seen.name ? ` «${seen.name}»` : ""}` : v}`;
+    });
+    return bits.length ? `${name} (${bits.join(", ")})` : name;
   }
 
   /** Resolves when everything pushed so far has played out. */
@@ -152,9 +165,4 @@ export class Performance {
     this.deps.actor.stop();
     this.deps.paper.hide();
   }
-}
-
-function describeDirection(name: string, attrs: Record<string, string>) {
-  const bits = Object.entries(attrs).map(([k, v]) => `${k} ${v}`);
-  return bits.length ? `${name} (${bits.join(", ")})` : name;
 }

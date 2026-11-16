@@ -24,7 +24,7 @@ In order. Each step leaves the app in a runnable state.
 
 - Triton serves the decision model with about 500 tokens of context per request, so the decider sees only a few journal lines. Raising `OLLAMA_CONTEXT_LENGTH` (or lowering `OLLAMA_NUM_PARALLEL`) on Triton would let it see more.
 - The ElevenLabs plan allows three requests at once and no PCM output; lines are fetched as MP3, two at a time.
-- Window titles go to the talking model as they are, including anything private in them. There is no filter yet.
+- Window titles go to the talking model as they are, including anything private in them. There is no filter yet. The same goes for the names of buttons, tabs and on-screen text in a window he looks into: chat names, file names.
 - The model sometimes invents directions; unknown ones are skipped silently.
 - The generated sounds in `public/sfx` have not been listened to.
 
@@ -44,6 +44,7 @@ In order. Each step leaves the app in a runnable state.
 | Decider: small local model picks silent reactions and when to wake the mind | `src/brain/decider.ts` | ✅ decisions live; the pestering ladder is untested |
 | Mind: streaming OpenAI-compatible chat that writes a performance script | `src/brain/mind.ts`, `persona.ts` | ✅ |
 | Performance script: speech and `<direction/>` tags interleaved on a voice track and a body track | `src/brain/script.ts`, `performance.ts` | ✅ live, no tests |
+| Sight: what is inside a window, fetched only when the model asks, so a wake carries titles and nothing more | `src-tauri/src/sense/elements.rs`, `src/sense/sight.ts`, `src/brain/tools.ts` | 🟡 |
 | Voice: ElevenLabs speech, binaural renderer on measured KU100 responses, generated sounds, silent captions fallback | `src/voice/`, `public/hrir`, `public/sfx` | 🟡 works, not yet tuned by ear |
 | Config file and tray menu (Settings, Quit) | `src-tauri/src/config.rs`, `src/config.ts` | 🟡 |
 | Dev harness: pose sheets and film strips via headless Edge, studio page | `dev/` | ✅ |
@@ -79,7 +80,7 @@ In order. Each step leaves the app in a runnable state.
 | Focused element in any window (UI Automation): kind, name, rect, text caret | 🟡 `sense/focus.rs`, seen live; the caret is untested. He glances at a newly focused element and watches some bursts of typing; the model gets one line about it |
 | Elements that change, move or matter most in a window | ⬜ |
 | Window outlines on demand (UI Automation, one scan of at most ~150 ms per window, kept until it resizes or changes title): toolbars, tab strips, panes as shelves | 🟡 `sense/skeleton.rs`, `src/sense/skeleton.ts`; scanned when he is picked up, carried, lands or picks where to go. Chromium and Electron apps, Terminal and Spotify give good outlines; Firefox and Thunderbird give none |
-| UI element positions (buttons, scrollbar, tab strip, close button) for pointing and clicking | ⬜ |
+| UI element positions (buttons, tabs, links, fields, menu items, scrollbars, text) for pointing and clicking | 🟡 `sense/elements.rs`, `src/sense/sight.ts`: one scan per look, at most 700 ms and 600 things, the app's own chrome first. Live: VS Code 124 things in 160 ms, WhatsApp 184 in 700 ms. Apps that tell UI Automation nothing (Firefox) give nothing |
 | Recycle bin contents, deletes, emptying | ⬜ |
 | Downloads folder watcher | ⬜ |
 | Typing activity (rate only, never content) | 🟡 from the caret moving |
@@ -163,21 +164,22 @@ In order. Each step leaves the app in a runnable state.
 | Behaviour | State |
 |---|---|
 | Point from afar with the whole arm | ✅ |
-| Go there, tap twice, look back | 🟡 approach and knock exist |
-| Paper ball thrown at the exact spot | ⬜ |
-| Bent straw pointer | ⬜ |
+| Go there, tap twice, look back | 🟡 `<tap at="…"/>`, `tap` in the director. He picks the nearest ledge he can reach the spot from; with none, he climbs the glass to it, clings, taps, and slides down when his grip goes. Seen in `film:tap` and `film:cling`, and once live on a VS Code button. A fingertip is exact with his arm straight and a few pixels off with it bent |
+| Paper ball thrown at the exact spot | 🟡 `<throw at="…"/>`. It flies over every ledge, bounces off the spot, then falls and lies about like other junk. Seen in `film:throw`, not live. It borrows the "swat" and "land" sounds |
+| Bent straw pointer | 🟡 not a direction of its own: `tap` and `point` use it whenever the spot is further than his finger and within about 115 units of his shoulder. The tip sits exactly on the spot. Seen in `film:tap` |
+| A ring spreading from the spot he touched (finger, straw or ball) | 🟡 `src/stage/ping.ts`, not seen live |
 | Cardboard signs | ✅ |
 | Notes slid from under the lid | 🟡 |
 | Cards: crumpled sheet smoothed on the glass into a document or small UI | ⬜ |
 | Drawing on the screen | ⬜ |
 | Generated UI inside a card | ⬜ |
-| The model names targets by window id | 🟡 by element or pixel ⬜ |
+| The model names targets by window id, by something inside a window (e12), by `focus`, or by pixel | 🟡 once live: asked where search is in VS Code, he looked, found the tab and tapped it |
 
 ### Agent work
 
 | Behaviour | State |
 |---|---|
-| Tool use for the mind (files, shell, web) | ⬜ |
+| Tool use for the mind | 🟡 the loop is there (`src/brain/tools.ts`, `Mind.ask`): he may stop up to three times a wake to call a tool, and what he said before is spoken while it runs. One tool so far, `look`, which lists what is inside a window. Files, shell and web ⬜ |
 | "This one": resolve what the cursor is hovering | ⬜ |
 | Clicking by walking up and pressing, a real simulated click | ⬜ |
 | Two-handed press for big buttons | ⬜ |
@@ -339,7 +341,8 @@ node dev/sfx.mjs                           generate missing sounds into public/s
 pnpm dev:web                               studio page in a browser, no desktop senses
 node dev/shoot.mjs emotions film:emerge    pose sheets and film strips into dev/out
 node dev/shoot.mjs film:groom film:lounge film:rim film:junk    the idle moves
+node dev/shoot.mjs film:tap film:cling film:throw               pointing things out; a cross marks each spot he touched
 pnpm typecheck
 ```
 
-`PESTO_SENSE_LOG=1` prints sense event counts. Through poke or the overlay's devtools, `pesto.say("…")` talks to him, `pesto.director.perform("dance")` plays a reaction, `pesto.decider.last` shows the last silent decision. Debug in his menu (`debug.panel`) draws a live trace in the corner of his screen: every request to the decision model with its time and likeliest answers, what his ears heard, and why he did or did not react while listening. The same lines go to the console and `pesto.trace.lines`.
+`PESTO_SENSE_LOG=1` prints sense event counts. Through poke or the overlay's devtools, `pesto.say("…")` talks to him, `pesto.director.perform("dance")` plays a reaction, `pesto.director.perform("tap", { target: "cursor" })` (or `"throw"`, `"point"`) shows a spot, `pesto.sight.look(pesto.world.foreground)` lists what he can see in a window, `pesto.decider.last` shows the last silent decision. Debug in his menu (`debug.panel`) draws a live trace in the corner of his screen: every request to the decision model with its time and likeliest answers, what his ears heard, and why he did or did not react while listening. The same lines go to the console and `pesto.trace.lines`.

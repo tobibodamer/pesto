@@ -1,4 +1,4 @@
-import { approach, pick, rand, sign } from "../pesto/math";
+import { approach, clamp, pick, rand, sign } from "../pesto/math";
 import type { World } from "../world/world";
 
 export const JUNK_KINDS = ["paper", "tin", "peel", "core", "fishbone"] as const;
@@ -24,6 +24,8 @@ export interface Junk {
   /** The window it lies on, which it moves with, and where on that window: from its top-left corner to the piece's foot. */
   hwnd: number | null;
   offset: { x: number; y: number };
+  /** The spot on the glass it was thrown at and the seconds until it gets there. Until then it passes over every ledge. */
+  aim: { x: number; y: number; t: number } | null;
 }
 
 interface Shape {
@@ -38,6 +40,8 @@ interface Shape {
 const GRAVITY = 2300;
 const LINGER = 22;
 const MOST = 4;
+/** How fast a thrown piece crosses the screen, in units per second. */
+const THROW_SPEED = 1150;
 const INK = "#2b2a2c";
 const LINE = 2.2;
 
@@ -220,13 +224,23 @@ export class Litter {
   scale = 1.1;
   /** Called the first time a piece hits something. */
   onLand: ((junk: Junk) => void) | null = null;
+  /** Called when a piece thrown at a spot bounces off it. */
+  onHit: ((junk: Junk) => void) | null = null;
 
   constructor(readonly world: World) {}
 
   /** Throws a piece from a point with a velocity in pixels per second. */
   toss(x: number, y: number, vx: number, vy: number, kind: JunkKind = pick(JUNK_KINDS)): Junk {
-    const junk: Junk = { kind, x, y, vx, vy, angle: rand(-1, 1), spin: sign(vx) * rand(5, 11), landed: false, resting: false, lain: 0, fade: 0, hwnd: null, offset: { x: 0, y: 0 } };
+    const junk: Junk = { kind, x, y, vx, vy, angle: rand(-1, 1), spin: sign(vx) * rand(5, 11), landed: false, resting: false, lain: 0, fade: 0, hwnd: null, offset: { x: 0, y: 0 }, aim: null };
     this.items.push(junk);
+    return junk;
+  }
+
+  /** Throws a paper ball from a point so that it bounces off the glass exactly at another. */
+  throwAt(x: number, y: number, tx: number, ty: number): Junk {
+    const t = clamp(Math.hypot(tx - x, ty - y) / (THROW_SPEED * this.scale), 0.22, 0.7);
+    const junk = this.toss(x, y, (tx - x) / t, (ty - y) / t - (GRAVITY * this.scale * t) / 2, "paper");
+    junk.aim = { x: tx, y: ty, t };
     return junk;
   }
 
@@ -261,6 +275,18 @@ export class Litter {
       j.x += j.vx * dt;
       j.y += j.vy * dt;
       j.angle += j.spin * dt;
+      if (j.aim) {
+        if ((j.aim.t -= dt) > 0) return true;
+        j.x = j.aim.x;
+        j.y = j.aim.y;
+        j.aim = null;
+        // Off the glass and back the way it came, with most of the throw gone out of it.
+        j.vx *= -0.22;
+        j.vy = -340 * this.scale;
+        j.spin *= -0.5;
+        this.onHit?.(j);
+        return true;
+      }
       if (j.x < v.x + r || j.x > v.x + v.w - r) {
         j.x = Math.max(v.x + r, Math.min(v.x + v.w - r, j.x));
         j.vx *= -0.5;

@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod cursor;
+pub mod elements;
 pub mod focus;
 pub mod media;
 pub mod monitors;
