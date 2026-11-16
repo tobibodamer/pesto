@@ -325,8 +325,9 @@ When a video or game takes the whole screen he is no longer on the desktop in fr
 | Privacy filter for window titles before they reach the model | ⬜ |
 | Tests for the script parser and the performance player | ⬜ |
 | `CLAUDE.md` for agents working in the repo | ⬜ |
-| Right-click menu on him or the can: Talk, Go home / Come out, Voice, Volume, Width, Captions, Reactions, Sticker border, Settings, Quit. Switches are saved to config.json | ✅ |
-| More switches in the menu as features arrive (sounds, proactivity level, do not disturb) | ⬜ |
+| Right-click menu on him or the can: Talk, Go home / Come out, Voice, Volume, Width, Sounds, Ears, Captions, Reactions, Sticker border, Debug, Settings, Quit. Switches are saved to config.json | ✅ |
+| Sounds apart from the voice: their own switch and volume, playing without a voice provider, plus a volume for each group (reactions, breathing, can, bumps) in Settings → Sounds. Groups are set in `SOUNDS` in `src/voice/eleven.ts` | 🟡 not tried in the app |
+| More switches in the menu as features arrive (proactivity level, do not disturb) | ⬜ |
 | Settings window (`settings.html`, `src/settings.ts`): every config.json key plus the talk hotkey, saved as you go and applied live in the overlay; opened from the tray or his menu | ✅ |
 | Start with Windows | ⬜ |
 | Installer build | ⬜ |

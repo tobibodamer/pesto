@@ -124,6 +124,19 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    id: "sounds",
+    about: "His knocks, huffs and squeaks.",
+    title: "Sounds",
+    on: { key: "sfx.enabled" },
+    fields: [
+      { kind: "slider", key: "sfx.volume", label: "Volume", min: 0, max: 1, step: 0.01, show: percent },
+      { kind: "slider", key: "sfx.reactions", label: "Reactions", hint: "Hm?, chitters, grumbles, yelps.", min: 0, max: 1, step: 0.01, show: percent },
+      { kind: "slider", key: "sfx.breathing", label: "Breathing", hint: "Huffs and pants while he climbs and runs.", min: 0, max: 1, step: 0.01, show: percent },
+      { kind: "slider", key: "sfx.can", label: "Can", hint: "Rustling, chewing and snoring from inside.", min: 0, max: 1, step: 0.01, show: percent },
+      { kind: "slider", key: "sfx.bumps", label: "Bumps", hint: "Knocks, thuds, landings, clanks.", min: 0, max: 1, step: 0.01, show: percent },
+    ],
+  },
+  {
     id: "ears",
     about: "Listens on your microphone for his name and what you say to him.",
     title: "Ears",

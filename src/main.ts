@@ -11,7 +11,7 @@ import { connectSenses, holdInteractive, setHitRegions } from "./sense/bridge";
 import { Sight } from "./sense/sight";
 import { Surveyor } from "./sense/skeleton";
 import { Stage } from "./stage/stage";
-import { ConfiguredVoice } from "./voice/create";
+import { ElevenVoice } from "./voice/eleven";
 
 const root = document.getElementById("stage")!;
 const config = await loadConfig();
@@ -29,7 +29,7 @@ window.addEventListener("resize", fit);
 await connectSenses(world);
 
 const now = () => world.time;
-const voice = new ConfiguredVoice(config, world);
+const voice = new ElevenVoice(config, () => world.primary?.rect ?? null);
 const journal = new Journal(world, actor);
 const sight = new Sight(world);
 const mind = new Mind({ config, journal, director, actor, voice, paper, sight, now });
@@ -43,7 +43,6 @@ actor.on("cue", (name) => voice.cue(name));
 function apply(patch: Patch<Config>) {
   absorb(config, patch);
   if (patch.hear) ears.enable(config.hear.enabled);
-  if (patch.voice) voice.rebuild();
   if (patch.decider) decider.retry();
   if (patch.debug) trace.enable(config.debug.panel);
   if (patch.body) {
@@ -99,6 +98,7 @@ window.addEventListener("contextmenu", (e) => {
     { ...toggle("Voice", !config.voice.muted, (on) => change({ voice: { muted: !on } })), divide: true },
     { label: "Volume", slide: { value: config.voice.volume, set: (volume) => change({ voice: { volume } }) } },
     { label: "Width", slide: { value: config.voice.width, set: (width) => change({ voice: { width } }) } },
+    toggle("Sounds", config.sfx.enabled, (on) => change({ sfx: { enabled: on } })),
     toggle("Ears", config.hear.enabled, (on) => change({ hear: { enabled: on } })),
     toggle("Captions", config.voice.captions, (on) => change({ voice: { captions: on } })),
     toggle("Reactions", config.decider.enabled, (on) => change({ decider: { enabled: on } })),

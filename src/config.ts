@@ -38,8 +38,22 @@ export interface Config {
     captions: boolean;
     /** Keeps the voice configured but silent; he falls back to speech bubbles. */
     muted: boolean;
-    /** How far to the sides he is heard, 0..1: 0 is always straight ahead, 1 is the true angle to where he stands. */
+    /** How far to the sides he is heard, 0..1: 0 is always straight ahead, 1 is the true angle to where he stands. Sounds follow it too. */
     width: number;
+  };
+  /** His little noises: knocks, huffs, squeaks. Local files, so they need no voice provider. */
+  sfx: {
+    enabled: boolean;
+    /** 0..1, all of them. The groups below scale it; 0 silences a group. */
+    volume: number;
+    /** "hm?", chitters, grumbles, yelps, squeaks. */
+    reactions: number;
+    /** Huffs, pants and strain while he climbs and runs. */
+    breathing: number;
+    /** Rustling, chewing, muttering and snoring from inside the can, and its lid. */
+    can: number;
+    /** Knocks, thuds, landings, swats and clanks. */
+    bumps: number;
   };
   /** The microphone: his name, and what is said to him after it. */
   hear: {
@@ -77,6 +91,7 @@ export const DEFAULTS: Config = {
   mind: { baseUrl: "", apiKey: "", model: "", temperature: 0.9, reasoningEffort: "low", quietSeconds: 240 },
   decider: { enabled: true, baseUrl: "http://triton:11434", model: "d1:2b-q8_0", speakAbove: 0.72 },
   voice: { provider: "none", apiKey: "", voiceId: "", model: "eleven_v4_turbo", stability: 0.35, volume: 0.9, captions: false, muted: false, width: 0.3 },
+  sfx: { enabled: true, volume: 0.9, reactions: 1, breathing: 1, can: 1, bumps: 1 },
   hear: { enabled: true, threshold: 0.25, followUp: 6, asides: true, provider: "elevenlabs", apiKey: "", model: "scribe_v3_live", language: "" },
   debug: { panel: false },
   body: { scale: 0.8, can: 1, border: 0 },

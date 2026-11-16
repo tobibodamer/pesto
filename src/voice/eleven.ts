@@ -8,20 +8,55 @@ import { SilentVoice, spokenText, type Line, type Utterance, type Voice } from "
 
 const API = "https://api.elevenlabs.io/v1";
 
+type Group = "reactions" | "breathing" | "can" | "bumps";
+
+/** Every sound in `public/sfx`: the group whose volume it follows, and how loud it plays next to the rest. */
+const SOUNDS: Record<string, { group: Group; level?: number }> = {
+  huh: { group: "reactions" },
+  chitter: { group: "reactions" },
+  grumble: { group: "reactions" },
+  eep: { group: "reactions" },
+  gasp: { group: "reactions" },
+  yelp: { group: "reactions" },
+  squeak: { group: "reactions" },
+  dizzy: { group: "reactions" },
+  puff: { group: "breathing", level: 0.3 },
+  sniff: { group: "breathing", level: 0.3 },
+  whuff: { group: "breathing", level: 0.3 },
+  pant: { group: "breathing", level: 0.35 },
+  churr: { group: "breathing", level: 0.45 },
+  churr2: { group: "breathing", level: 0.45 },
+  rustle: { group: "can" },
+  chew: { group: "can" },
+  mutter: { group: "can" },
+  snore: { group: "can" },
+  lid: { group: "can" },
+  knock: { group: "bumps" },
+  clap: { group: "bumps" },
+  thud: { group: "bumps" },
+  land: { group: "bumps" },
+  swat: { group: "bumps" },
+  slap: { group: "bumps" },
+  scrabble: { group: "bumps" },
+  clank: { group: "bumps" },
+};
+
 /**
- * Pesto's real voice: ElevenLabs speech, rendered binaurally from wherever
- * he is on the screens. Each line is synthesised as soon as it is prepared,
- * so it is usually ready before the previous one has finished.
+ * How Pesto is heard: ElevenLabs speech and his sound effects, rendered
+ * binaurally from wherever he is on the screens. Each line is synthesised as
+ * soon as it is prepared, so it is usually ready before the previous one has
+ * finished. Without a configured, unmuted voice he still makes his sounds.
  */
 export class ElevenVoice implements Voice {
-  /** False while muted, so callers show captions instead. */
+  /** False while muted or unconfigured, so callers show captions instead. */
   get audible() {
-    return !this.config.voice.muted;
+    const { provider, apiKey, voiceId, muted } = this.config.voice;
+    return provider === "elevenlabs" && !!apiKey && !!voiceId && !muted;
   }
 
   private ctx = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
-  private master: GainNode;
-  private volume: number;
+  private speech: GainNode;
+  private effects: GainNode;
   private space: Spatializer | null = null;
   private throat: AudioNode;
   private ready: Promise<void>;
@@ -36,9 +71,6 @@ export class ElevenVoice implements Voice {
     /** The monitor the listener sits in front of. */
     private screen: () => Rect | null,
   ) {
-    this.master = this.ctx.createGain();
-    this.volume = config.voice.volume;
-    this.master.gain.value = this.volume;
     // Catches the rare peak when speech, a sound and the room pile up.
     const limiter = this.ctx.createDynamicsCompressor();
     limiter.threshold.value = -4;
@@ -46,20 +78,27 @@ export class ElevenVoice implements Voice {
     limiter.ratio.value = 12;
     limiter.attack.value = 0.002;
     limiter.release.value = 0.12;
-    this.master.connect(limiter).connect(this.ctx.destination);
+    limiter.connect(this.ctx.destination);
+
+    this.speech = this.ctx.createGain();
+    this.speech.gain.value = clamp(config.voice.volume);
+    this.effects = this.ctx.createGain();
+    this.effects.gain.value = clamp(config.sfx.volume);
 
     const small = smallBody(this.ctx);
     this.throat = small.input;
+    small.output.connect(this.speech);
 
     this.ready = Hrirs.load(this.ctx).then((hrirs) => {
-      this.space = new Spatializer(this.ctx, hrirs, this.master);
-      small.output.connect(this.space.input);
+      this.space = new Spatializer(this.ctx, hrirs, limiter);
+      this.speech.connect(this.space.input);
+      this.effects.connect(this.space.input);
     });
     this.ready.catch((err) => console.error("voice:", err));
   }
 
   prepare(text: string): Line {
-    if (this.config.voice.muted) return this.fallback.prepare(text);
+    if (!this.audible) return this.fallback.prepare(text);
     const audio = this.queued(() => this.synthesise(text)).catch((err) => {
       console.warn("voice:", err);
       return null;
@@ -74,7 +113,9 @@ export class ElevenVoice implements Voice {
   }
 
   cue(name: string) {
-    if (this.config.voice.muted) return;
+    const known = SOUNDS[name];
+    const loudness = known ? clamp(this.config.sfx[known.group]) * (known.level ?? 1) : 1;
+    if (!this.config.sfx.enabled || loudness === 0) return;
     let sound = this.sounds.get(name);
     if (!sound) {
       sound = fetch(`/sfx/${name}.mp3`)
@@ -83,14 +124,15 @@ export class ElevenVoice implements Voice {
         .catch(() => null);
       this.sounds.set(name, sound);
     }
-    void sound.then((buffer) => {
+    void sound.then(async (buffer) => {
       if (!buffer || !this.space) return;
+      if (this.ctx.state === "suspended") await this.ctx.resume().catch(() => {});
       const source = this.ctx.createBufferSource();
       source.buffer = buffer;
       source.playbackRate.value = 0.94 + Math.random() * 0.12;
       const level = this.ctx.createGain();
-      level.gain.value = 0.5;
-      source.connect(level).connect(this.space.input);
+      level.gain.value = 0.5 * loudness;
+      source.connect(level).connect(this.effects);
       source.start();
     });
   }
@@ -101,12 +143,9 @@ export class ElevenVoice implements Voice {
 
   place(where: Vec, muffled: boolean) {
     if (!this.space) return;
-    const volume = Math.max(0, Math.min(1, this.config.voice.volume));
-    if (volume !== this.volume) {
-      this.volume = volume;
-      this.master.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.03);
-    }
-    const width = Math.max(0, Math.min(1, this.config.voice.width));
+    follow(this.speech, clamp(this.config.voice.volume));
+    follow(this.effects, clamp(this.config.sfx.volume));
+    const width = clamp(this.config.voice.width);
     const seen = seenFromChair(where, this.screen(), width);
     this.space.spread = width;
     this.space.aim(seen.azimuth, seen.elevation, seen.metres, muffled);
@@ -205,6 +244,17 @@ export class ElevenVoice implements Voice {
       },
     };
   }
+}
+
+const clamp = (v: number) => Math.max(0, Math.min(1, v));
+
+const targets = new WeakMap<GainNode, number>();
+
+/** Glides a gain to a new setting instead of clicking. */
+function follow(node: GainNode, value: number) {
+  if ((targets.get(node) ?? node.gain.value) === value) return;
+  targets.set(node, value);
+  node.gain.setTargetAtTime(value, node.context.currentTime, 0.03);
 }
 
 /**
