@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pesto Studio</title>
+    <style>
+      :root {
+        --bg: #11151c;
+        --panel: #181d27;
+        --line: #2a3242;
+        --text: #e6e9ef;
+        --dim: #8b94a7;
+        --accent: #7fd68a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.3 system-ui, sans-serif;
+      }
+      body {
+        display: grid;
+        grid-template-columns: 1fr 290px;
+        overflow: hidden;
+      }
+      #view {
+        position: relative;
+        overflow: hidden;
+        cursor: crosshair;
+      }
+      #desk {
+        position: absolute;
+        left: 0;
+        top: 0;
+        transform-origin: 0 0;
+        overflow: hidden;
+      }
+      .win {
+        position: absolute;
+        background: #f4f5f7;
+        border-radius: 8px;
+        box-shadow: 0 6px 24px #0005;
+        overflow: hidden;
+      }
+      .win .bar {
+        height: 30px;
+        background: #dfe3ea;
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        color: #333;
+        font-weight: 600;
+        cursor: grab;
+      }
+      .win .bar span {
+        flex: 1;
+      }
+      .win .min {
+        width: 22px;
+        height: 22px;
+        border-radius: 4px;
+        text-align: center;
+        line-height: 20px;
+        cursor: pointer;
+      }
+      .win .min:hover {
+        background: #c6ccd7;
+      }
+      #hud {
+        position: absolute;
+        left: 10px;
+        top: 8px;
+        font: 600 12px ui-monospace, monospace;
+        text-shadow: 0 1px 2px #000;
+        pointer-events: none;
+      }
+      aside {
+        background: var(--panel);
+        border-left: 1px solid var(--line);
+        overflow-y: auto;
+        padding: 12px;
+      }
+      h2 {
+        margin: 14px 0 6px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--dim);
+      }
+      h2:first-child {
+        margin-top: 0;
+      }
+      .grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      button {
+        background: #232a38;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 8px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: #4a5670;
+      }
+      button.on {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #10200f;
+      }
+      input[type="text"] {
+        width: 100%;
+        background: #0f131a;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font: inherit;
+        margin-top: 4px;
+      }
+      @media (max-width: 760px) {
+        body {
+          grid-template-columns: 1fr;
+          grid-template-rows: 55vh 1fr;
+        }
+        aside {
+          border-left: 0;
+          border-top: 1px solid var(--line);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main id="view">
+      <div id="desk"></div>
+      <div id="hud"></div>
+    </main>
+    <aside id="panel"></aside>
+    <script type="module" src="./studio.ts"></script>
+  </body>
+</html>

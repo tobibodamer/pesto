@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Talk to Pesto</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+      form {
+        position: absolute;
+        inset: 8px 8px 16px;
+        display: flex;
+        background: #fffdf8;
+        border: 2.6px solid #2c2321;
+        border-radius: 16px;
+        box-shadow:
+          0 0 0 3.5px #fff,
+          0 4px 8px rgba(20, 14, 10, 0.3);
+      }
+      form::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        bottom: -9px;
+        width: 12px;
+        height: 12px;
+        margin-left: -6px;
+        background: #fffdf8;
+        border: solid #2c2321;
+        border-width: 0 2.6px 2.6px 0;
+        rotate: 45deg;
+      }
+      input {
+        flex: 1;
+        min-width: 0;
+        padding: 0 16px;
+        font:
+          600 16px/1 "Segoe UI",
+          system-ui,
+          sans-serif;
+        color: #2c2321;
+        background: none;
+        border: 0;
+        outline: 0;
+      }
+      input::placeholder {
+        color: #b3a79c;
+      }
+    </style>
+  </head>
+  <body>
+    <form><input id="say" placeholder="Say something to Pesto" autocomplete="off" spellcheck="false" aria-label="Say something to Pesto" /></form>
+    <script type="module" src="/src/ask.ts"></script>
+  </body>
+</html>
