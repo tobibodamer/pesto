@@ -81,7 +81,7 @@ export class Journal {
       if (line) this.add("audio", clip(line, 120), 1);
     });
     actor.on("grabbed", () => this.add("touch", "picked Pesto up by the scruff", 2));
-    actor.on("dropped", ({ onLedge }) => this.add("touch", onLedge ? "put Pesto down" : "let go of Pesto on bare glass", 2));
+    actor.on("dropped", ({ onLedge }) => this.add("touch", onLedge ? "put Pesto down" : "dropped Pesto in mid-air", 2));
     actor.on("thrown", () => this.add("touch", "threw Pesto", 3));
     actor.on("shaken", () => this.add("touch", "shook Pesto until he was dizzy", 3));
     actor.on("petted", () => this.add("touch", "petted Pesto", 2));

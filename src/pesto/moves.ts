@@ -1030,18 +1030,24 @@ const HANG_HAND = { x: 60, y: -78 };
 
 /**
  * An edge he could catch with a hand from where he is: one spanning his
- * position, from `above` over his raised hand to `below` under it.
+ * position, from `above` over his raised hand to `below` under it, and
+ * lower than `after`.
  */
-export function edgeToHang(a: Actor, above = 70, below = 40): Ledge | null {
+export function edgeToHang(a: Actor, above = 70, below = 40, after = -Infinity): Ledge | null {
   const hand = a.y + HANG_HAND.y * a.scale;
   let best: Ledge | null = null;
   for (const l of a.world.ledges) {
-    if (a.x < l.x1 + 12 || a.x > l.x2 - 12) continue;
+    if (a.x < l.x1 + 12 || a.x > l.x2 - 12 || l.y <= after) continue;
     const d = l.y - hand;
     if (d < -above * a.scale || d > below * a.scale) continue;
     if (!best || Math.abs(d) < Math.abs(best.y - hand)) best = l;
   }
   return best;
+}
+
+/** An edge his hand is falling past, other than one he was holding when the fall began. */
+export function edgeToCatch(a: Actor): Ledge | null {
+  return edgeToHang(a, 40, 0, a.fallFrom + (HANG_HAND.y + 12) * a.scale);
 }
 
 /** Catches an edge with one hand and hangs there, looking up at it, then pulls himself up or lets go. */

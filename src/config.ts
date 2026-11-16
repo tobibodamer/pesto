@@ -64,8 +64,10 @@ export interface Config {
     panel: boolean;
   };
   body: {
-    /** Pixels per character unit; he is about 150 units tall. */
+    /** Pixels per character unit; he is about 150 units tall. His can and its junk grow and shrink with him. */
     scale: number;
+    /** The can's size next to his, on top of `scale`. 1 keeps them as drawn. */
+    can: number;
     /** Thickness of the white sticker border around him and his can, in character units. 0 removes it. */
     border: number;
   };
@@ -77,7 +79,7 @@ export const DEFAULTS: Config = {
   voice: { provider: "none", apiKey: "", voiceId: "", model: "eleven_v4_turbo", stability: 0.35, volume: 0.9, captions: false, muted: false, width: 0.3 },
   hear: { enabled: true, threshold: 0.25, followUp: 6, asides: true, provider: "elevenlabs", apiKey: "", model: "scribe_v3_live", language: "" },
   debug: { panel: false },
-  body: { scale: 0.8, border: 0 },
+  body: { scale: 0.8, can: 1, border: 0 },
 };
 
 function merge<T>(base: T, patch: unknown): T {

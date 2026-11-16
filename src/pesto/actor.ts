@@ -28,7 +28,7 @@ export type Attention =
 
 export interface ActorEvents {
   grabbed: void;
-  /** Let go gently. `onLedge` is false when he was left on bare glass. */
+  /** Let go gently. `onLedge` is false when he was let go in mid-air and is falling. */
   dropped: { onLedge: boolean };
   thrown: void;
   /** Landed after a fall or a throw. `hard` when it was a long way down. */
@@ -112,7 +112,8 @@ export class Actor {
   private walkPhase = 0;
   private climb: Climb | null = null;
   private airTime = 0;
-  private fallFrom = 0;
+  /** Feet y where the current fall or jump started. */
+  fallFrom = 0;
   private landKick = 0;
   private hangBeat = 0;
   private swing = new Spring(0, 9, 0.28);
@@ -363,7 +364,7 @@ export class Actor {
       this.landKick = 0.5;
       this.emit("dropped", { onLedge: true });
     } else {
-      this.stick(rand(1.6, 2.6));
+      this.launch(clamp(c.vx * 0.35, -320, 320), clamp(c.vy * 0.35, -220, 420));
       this.emit("dropped", { onLedge: false });
     }
   }

@@ -14,7 +14,7 @@ import { ConfiguredVoice } from "./voice/create";
 
 const root = document.getElementById("stage")!;
 const config = await loadConfig();
-const stage = new Stage(root, { scale: config.body.scale, border: config.body.border });
+const stage = new Stage(root, { scale: config.body.scale, can: config.body.can, border: config.body.border });
 const { world, actor, director, paper } = stage;
 
 // The stage works in physical pixels; undo the webview's DPI scaling so one
@@ -45,7 +45,7 @@ function apply(patch: Patch<Config>) {
   if (patch.decider) decider.retry();
   if (patch.debug) trace.enable(config.debug.panel);
   if (patch.body) {
-    stage.size = config.body.scale;
+    stage.resize(config.body.scale, config.body.can);
     stage.stickerBorder = config.body.border;
   }
 }

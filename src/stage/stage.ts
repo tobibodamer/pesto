@@ -62,6 +62,9 @@ const YIELD_AFTER = 0.45;
  * draw them. `root` is a container whose coordinate space is physical
  * virtual-desktop pixels, offset so that the virtual desktop's corner is (0,0).
  */
+/** The can's scale for each unit of his, the proportion they were drawn in. */
+const CAN_PER_PESTO = 1.1 / 0.8;
+
 export class Stage {
   readonly world = new World();
   readonly can = new Can();
@@ -72,9 +75,9 @@ export class Stage {
   readonly paper: Paper;
   readonly menu: Menu;
 
-  private pesto: Sprite;
-  private canBack: Sprite;
-  private canFront: Sprite;
+  private pesto!: Sprite;
+  private canBack!: Sprite;
+  private canFront!: Sprite;
   private canDirty = true;
   private junk = new Map<Junk, { sprite: Sprite; angle: number; fade: number }>();
   private wasSplit = false;
@@ -86,17 +89,10 @@ export class Stage {
 
   constructor(
     private root: HTMLElement,
-    options: { scale?: number; border?: number } = {},
+    options: { scale?: number; can?: number; border?: number } = {},
   ) {
-    if (options.scale) this.actor.scale = options.scale;
     if (options.border != null) this.border = options.border;
-    const s = this.actor.scale;
-    const cs = this.can.scale;
-    this.litter.scale = cs * 1.25;
-    this.canBack = new Sprite(root, Math.ceil(190 * cs) + PAD * 2, Math.ceil(215 * cs) + PAD * 2, 72 * cs + PAD, 203 * cs + PAD, 1);
-    this.pesto = this.makePesto();
-    this.canFront = new Sprite(root, Math.ceil(110 * cs) + PAD * 2, Math.ceil(110 * cs) + PAD * 2, 55 * cs + PAD, 103 * cs + PAD, 3);
-    this.canFront.show(false);
+    this.resize(options.scale ?? this.actor.scale, options.can ?? 1);
     this.paper = new Paper(root);
     this.menu = new Menu(root);
     this.world.on("monitors", () => this.placeCan());
@@ -109,21 +105,28 @@ export class Stage {
     this.world.on("mouseUp", () => this.carry && this.setCanDown());
   }
 
-  /** Pixels per character unit. */
-  get size() {
-    return this.actor.scale;
-  }
-
-  set size(scale: number) {
-    if (!(scale > 0) || scale === this.actor.scale) return;
+  /**
+   * Sizes him in pixels per character unit, and the can and its junk with him.
+   * `can` makes the can bigger or smaller than that on its own; 1 keeps them as drawn.
+   */
+  resize(scale: number, can = 1) {
+    const cs = scale * CAN_PER_PESTO * can;
+    if (!(scale > 0 && cs > 0) || (this.pesto && scale === this.actor.scale && cs === this.can.scale)) return;
     this.actor.scale = scale;
-    this.pesto.remove();
-    this.pesto = this.makePesto();
-  }
-
-  private makePesto() {
-    const s = this.actor.scale;
-    return new Sprite(this.root, Math.ceil(310 * s) + PAD * 2, Math.ceil(300 * s) + PAD * 2, 155 * s + PAD, 240 * s + PAD, 2);
+    this.can.scale = cs;
+    this.litter.scale = cs * 1.25;
+    const s = scale;
+    const root = this.root;
+    this.canBack?.remove();
+    this.pesto?.remove();
+    this.canFront?.remove();
+    this.canBack = new Sprite(root, Math.ceil(190 * cs) + PAD * 2, Math.ceil(215 * cs) + PAD * 2, 72 * cs + PAD, 203 * cs + PAD, 1);
+    this.pesto = new Sprite(root, Math.ceil(310 * s) + PAD * 2, Math.ceil(300 * s) + PAD * 2, 155 * s + PAD, 240 * s + PAD, 2);
+    this.canFront = new Sprite(root, Math.ceil(110 * cs) + PAD * 2, Math.ceil(110 * cs) + PAD * 2, 55 * cs + PAD, 103 * cs + PAD, 3);
+    this.canFront.show(false);
+    for (const { sprite } of this.junk.values()) sprite.remove();
+    this.junk.clear();
+    this.canDirty = true;
   }
 
   /** White sticker border around Pesto and the can, in character units. 0 removes it. */

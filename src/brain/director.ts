@@ -278,6 +278,8 @@ export class Director {
   private loudFor = 0;
   /** Until when a slide down the glass will not try to catch an edge again. */
   private catchAfter = 0;
+  /** When a fall from the cursor ends with him clinging to the glass, unless he lands or catches an edge first. */
+  private glassAt: number | null = null;
   /** Whether he watches the current burst of typing; decided afresh for each burst. */
   private watchingTyping = false;
   private lastCaretAt = -Infinity;
@@ -303,13 +305,19 @@ export class Director {
     a.on("petted", () => a.cue("chitter"));
     a.on("grabbed", () => this.onGrabbed());
     a.on("dropped", ({ onLedge }) => {
-      const edge = onLedge ? null : moves.edgeToHang(a);
+      if (onLedge) {
+        a.feel("curious", 1.6);
+        void a.run(this.inspectGround());
+        return;
+      }
+      // An edge right at his raised hand he grabs at once; otherwise he falls a bit before he finds a hold.
+      const edge = moves.edgeToHang(a, 70, 0);
       if (edge) {
         void a.run(moves.hangFrom(a, edge));
         return;
       }
-      a.feel(onLedge ? "curious" : "strained", 1.6);
-      if (onLedge) void a.run(this.inspectGround());
+      a.feel("scared", 0.8);
+      this.glassAt = chance(0.75) ? this.world.time + rand(0.18, 0.42) : null;
     });
     a.on("thrown", () => a.cue("yelp"));
     a.on("shaken", () => a.cue("dizzy"));
@@ -542,6 +550,28 @@ export class Director {
       if (edge) {
         this.catchAfter = this.world.time + 1;
         if (chance(0.7)) void a.run(moves.hangFrom(a, edge));
+      }
+    }
+
+    // Falling past an edge, he may snatch it; let go from the cursor, he may claw at the glass.
+    if (a.mode !== "air") this.glassAt = null;
+    if (a.mode === "air" && a.vy > 0 && a.tumble === 0 && a.landOn == null && !a.busy) {
+      const edge = this.world.time > this.catchAfter ? moves.edgeToCatch(a) : null;
+      if (edge) {
+        this.catchAfter = this.world.time + 0.4;
+        if (chance(0.7)) {
+          this.glassAt = null;
+          void a.run(moves.hangFrom(a, edge));
+        }
+      }
+      if (this.glassAt != null && this.world.time >= this.glassAt && a.mode === "air") {
+        this.glassAt = null;
+        // Not worth it with the ground coming up anyway.
+        const floor = this.world.ledgeBelow(a.x, a.y);
+        if (!floor || floor.y - a.y > 120 * a.scale) {
+          a.stick(rand(1.6, 2.6));
+          a.feel("strained", 1.6);
+        }
       }
     }
 

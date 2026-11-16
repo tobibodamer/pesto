@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { absorb, loadConfig, saveConfig, type Config } from "./config";
+import { absorb, DEFAULTS, loadConfig, saveConfig, type Config } from "./config";
 
 type Path = string;
 
@@ -51,7 +51,8 @@ const SECTIONS: Section[] = [
     id: "general",
     title: "General",
     fields: [
-      { kind: "slider", key: "body.scale", label: "Size", min: 0.4, max: 1.6, step: 0.05, show: percent },
+      { kind: "slider", key: "body.scale", label: "Size", min: 0.4, max: 1.6, step: 0.02, show: (v) => percent(v / DEFAULTS.body.scale) },
+      { kind: "slider", key: "body.can", label: "Can size", hint: "Next to him. 100% is as drawn.", min: 0.5, max: 2, step: 0.05, show: percent },
       { kind: "slider", key: "body.border", label: "Sticker border", min: 0, max: 3, step: 0.1, show: (v) => v.toFixed(1) },
       { kind: "hotkey", label: "Talk hotkey", hint: "Opens a box to type to him, from any app." },
     ],
