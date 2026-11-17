@@ -222,6 +222,35 @@ const SECTIONS: Section[] = [
       { kind: "text", key: "hear.language", label: "Language", hint: "A two-letter code like en or de. Empty detects it and allows mixing.", placeholder: "Auto", when: transcribes, suggest: ["en", "de", "fr", "es", "it", "nl", "pl", "pt", "ja"] },
     ],
   },
+  {
+    id: "agents",
+    about: "Claude Code jobs he hands off for you and keeps an eye on.",
+    title: "Agents",
+    fields: [
+      { kind: "switch", key: "agents.watch", label: "Watch your sessions", hint: "Adds hooks to Claude Code's settings, so your own sessions tell him when they finish or need you." },
+      {
+        kind: "select",
+        key: "agents.permissionMode",
+        label: "His jobs may",
+        options: [
+          ["manual", "Only read"],
+          ["acceptEdits", "Edit files"],
+          ["auto", "Decide what is safe"],
+          ["bypassPermissions", "Do anything"],
+        ],
+      },
+      { kind: "text", key: "agents.model", label: "Model", placeholder: "Claude Code's default", suggest: ["opus", "sonnet", "haiku"] },
+      {
+        kind: "group",
+        id: "agents-advanced",
+        label: "Advanced",
+        fields: [
+          { kind: "text", key: "agents.command", label: "Command" },
+          { kind: "number", key: "agents.port", label: "Hook port", min: 1024, max: 65535, unit: "" },
+        ],
+      },
+    ],
+  },
 ];
 
 const nav = document.querySelector("nav")!;

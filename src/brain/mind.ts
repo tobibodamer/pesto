@@ -8,6 +8,7 @@ import type { Paper } from "../stage/bubble";
 import type { Voice } from "../voice/voice";
 import type { Director } from "./director";
 import type { Hands } from "./hands";
+import type { Jobs } from "./jobs";
 import type { Journal } from "./journal";
 import { Performance } from "./performance";
 import { personaPrompt, wakeMessage } from "./persona";
@@ -18,7 +19,9 @@ export type WakeReason =
   /** The person said something to him. */
   | { kind: "said"; text: string }
   /** Something happened that he should react to out loud. */
-  | { kind: "event"; why: string };
+  | { kind: "event"; why: string }
+  /** One of his errands needs them: a timer ran out, an agent finished or asks for something. */
+  | { kind: "news"; lines: string[] };
 
 interface Turn {
   user: string;
@@ -79,6 +82,7 @@ export class Mind {
       paper: Paper;
       sight: Sight;
       hands: Hands;
+      jobs: Jobs;
       now: () => number;
     },
   ) {}
@@ -95,7 +99,7 @@ export class Mind {
   }
 
   async wake(reason: WakeReason): Promise<void> {
-    const { config, journal, director, actor, voice, paper, sight, hands } = this.deps;
+    const { config, journal, director, actor, voice, paper, sight, hands, jobs } = this.deps;
     if (!this.configured) {
       if (!this.warned) console.warn("mind: no model configured (config.json → mind.baseUrl, mind.model)");
       this.warned = true;
@@ -121,10 +125,13 @@ export class Mind {
       log: journal.render(80, this.journalMark),
       snapshot: snap.text,
       self: describeSelf(actor),
+      errands: jobs.describe(mayAct ? await jobs.projects() : []),
       reason:
         reason.kind === "said"
           ? `They just said to you: "${reason.text}"`
-          : `You woke because: ${reason.why}\nThey did not speak to you. React briefly, or not at all.`,
+          : reason.kind === "news"
+            ? `News for them:\n${reason.lines.map((l) => `- ${l}`).join("\n")}\nThey did not speak to you, and they may be busy with something else. Get their attention with <knock/> first, then tell them in a sentence or two what it is and what it wants from them. Anything long or exact goes in a <note>.`
+            : `You woke because: ${reason.why}\nThey did not speak to you. React briefly, or not at all.`,
     });
     this.journalMark = journal.now() + 1;
 
@@ -135,6 +142,7 @@ export class Mind {
       paper,
       sight,
       hands,
+      jobs,
       windowIds: snap.ids,
       mayAct,
       captions: config.voice.captions,
@@ -175,7 +183,7 @@ export class Mind {
     ];
     let raw = "";
     const record: NonNullable<Mind["last"]> = (this.last = {
-      reason: reason.kind === "said" ? `said: ${reason.text}` : `event: ${reason.why}`,
+      reason: reason.kind === "said" ? `said: ${reason.text}` : reason.kind === "news" ? `news: ${reason.lines.join(" | ")}` : `event: ${reason.why}`,
       snapshot: snap.text,
       steps: [],
       did: performance.did,

@@ -91,6 +91,21 @@ export interface Config {
     /** ISO 639-1 code such as "en" or "de". Empty lets it work out the language, and mix them. */
     language: string;
   };
+  /** Claude Code, the coding agent he hands jobs to and keeps an eye on. */
+  agents: {
+    /** Lets their own Claude Code sessions tell him when they finish or ask for something, through hooks in ~/.claude/settings.json. */
+    watch: boolean;
+    /** Where on localhost he listens for those hooks. */
+    port: number;
+    /** Shared with the hooks so only they are heard. Made on first start. */
+    token: string;
+    /** How the Claude Code command is called. */
+    command: string;
+    /** How much the runs he starts may do without asking: Claude Code's permission mode. */
+    permissionMode: string;
+    /** Empty uses Claude Code's default. */
+    model: string;
+  };
   debug: {
     /** Shows what his ears and the decision model are doing in a corner of the screen he is on. */
     panel: boolean;
@@ -112,6 +127,7 @@ export const DEFAULTS: Config = {
   voice: { provider: "none", apiKey: "", voiceId: "", model: "eleven_v4_turbo", stability: 0.35, volume: 0.9, captions: false, muted: false, width: 0.3 },
   sfx: { enabled: true, volume: 0.9, reactions: 1, breathing: 1, can: 1, bumps: 1 },
   hear: { enabled: true, threshold: 0.25, followUp: 5, followUpReplies: 2, followUpWords: 1, followUpCheck: 0.5, asides: true, provider: "elevenlabs", apiKey: "", model: "scribe_v3_live", language: "" },
+  agents: { watch: false, port: 47733, token: "", command: "claude", permissionMode: "acceptEdits", model: "" },
   debug: { panel: false },
   body: { scale: 0.8, can: 1, border: 0 },
 };

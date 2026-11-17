@@ -1,4 +1,5 @@
 mod act;
+mod agents;
 mod ask;
 mod config;
 mod hear;
@@ -68,6 +69,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .manage(Arc::clone(&sense_state))
         .manage(RuntimeHandles(Mutex::new(None)))
+        .manage(agents::Agents::default())
         .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![
             act::window::window_act,
@@ -78,6 +80,12 @@ pub fn run() {
             act::press::element_text,
             act::launch::launch_list,
             act::launch::launch_open,
+            agents::agent_run,
+            agents::agent_stop,
+            agents::agent_listen,
+            agents::agent_hooks,
+            agents::agent_hooks_on,
+            agents::agent_projects,
             ask::ask_show,
             ask::ask_hide,
             ask::ask_submit,

@@ -10,7 +10,8 @@
  *
  * - Bare text is spoken.
  * - `<name attr="value"/>` is a stage direction.
- * - `<sign>…</sign>` and `<note>…</note>` carry text he shows instead of says.
+ * - `<sign>…</sign>` and `<note>…</note>` carry text he shows instead of says;
+ *   `<agent>…</agent>`, `<reply>…</reply>` and `<timer>…</timer>` carry what he passes on.
  * Anything the parser does not recognise is dropped, never spoken.
  */
 
@@ -19,7 +20,7 @@ export type ScriptItem =
   | { kind: "do"; name: string; attrs: Record<string, string>; body?: string };
 
 /** Tags whose content is shown, not spoken. */
-const BLOCKS = new Set(["sign", "note"]);
+const BLOCKS = new Set(["sign", "note", "agent", "reply", "timer"]);
 
 const ATTR = /([a-zA-Z_][\w-]*)\s*=\s*"([^"]*)"/g;
 /** A sentence end followed by whitespace: a good place to hand speech to the voice. */

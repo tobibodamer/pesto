@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { connectJobs, listenForHooks, syncHooks } from "./brain/agents";
 import { Decider } from "./brain/decider";
 import { Hands } from "./brain/hands";
 import { Journal } from "./brain/journal";
@@ -34,7 +35,8 @@ const voice = new ElevenVoice(config, () => world.primary?.rect ?? null);
 const journal = new Journal(world, actor);
 const sight = new Sight(world);
 const hands = new Hands(world, sight);
-const mind = new Mind({ config, journal, director, actor, voice, paper, sight, hands, now });
+const jobs = await connectJobs(config, world);
+const mind = new Mind({ config, journal, director, actor, voice, paper, sight, hands, jobs, now });
 const decider = new Decider({ config, world, journal, director, actor, mind, now });
 const ears = new Ears({ config, director, actor, journal, mind, decider, paper, now });
 await ears.connect();
@@ -47,6 +49,7 @@ function apply(patch: Patch<Config>) {
   if (patch.hear) ears.enable(config.hear.enabled);
   if (patch.decider) decider.retry();
   if (patch.debug) trace.enable(config.debug.panel);
+  if (patch.agents && ("watch" in patch.agents || "port" in patch.agents)) void listenForHooks(config).then(() => syncHooks(config, true));
   if (patch.body) {
     stage.resize(config.body.scale, config.body.can);
     stage.stickerBorder = config.body.border;
@@ -120,6 +123,15 @@ await listen("ask://closed", () => {
 });
 await listen<string>("ask://said", (e) => void mind.wake({ kind: "said", text: e.payload }).then(() => director.listen(false)));
 
+// News from his errands waits until he is free and nobody is talking to him.
+setInterval(() => {
+  jobs.tick();
+  if (!jobs.news.length || mind.busy || ears.listening || !mind.configured) return;
+  const lines = jobs.takeNews();
+  journal.add("pesto", `news: ${lines.join(" ")}`);
+  void mind.wake({ kind: "news", lines });
+}, 1000);
+
 let last = performance.now();
 function frame(t: number) {
   const dt = Math.min(0.05, (t - last) / 1000);
@@ -145,5 +157,5 @@ requestAnimationFrame(frame);
 //   pesto.decider.last                the last silent decision and why
 //   pesto.trace.lines                 what his ears and the decision model did, while Debug is on
 Object.assign(window, {
-  pesto: { stage, world, actor, director, journal, mind, decider, ears, sight, hands, config, trace, say: (text: string) => mind.wake({ kind: "said", text }) },
+  pesto: { stage, world, actor, director, journal, mind, decider, ears, sight, hands, jobs, config, trace, say: (text: string) => mind.wake({ kind: "said", text }) },
 });

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Line, Utterance, Voice } from "../voice/voice";
 import { Fumble } from "./hands";
+import { fakeJobs } from "./jobs.fake";
 import { Performance, type PerformanceDeps } from "./performance";
 import { parseScript } from "./script";
 
@@ -104,6 +105,7 @@ function setup(opts: { audible?: boolean; captions?: boolean; mayAct?: boolean }
     media: (verb: string) => hands.attempt(verb),
     open: (what: string) => hands.attempt(`open ${what}`),
   };
+  const errands = fakeJobs();
   const performance = new Performance({
     director,
     actor,
@@ -111,6 +113,7 @@ function setup(opts: { audible?: boolean; captions?: boolean; mayAct?: boolean }
     paper,
     sight,
     hands,
+    jobs: errands.jobs,
     windowIds: new Map([["w2", 4242]]),
     mayAct: opts.mayAct ?? true,
     captions: opts.captions ?? false,
@@ -137,7 +140,7 @@ function setup(opts: { audible?: boolean; captions?: boolean; mayAct?: boolean }
     }
     await performance.finish();
   };
-  return { performance, push, playOut, lines, performs, shown, actor, paper, director, hands, log };
+  return { performance, push, playOut, lines, performs, shown, actor, paper, director, hands, log, errands };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -546,5 +549,39 @@ describe("Performance: being cut off", () => {
     await t.performance.finish();
     expect(t.lines).toEqual([]);
     expect(t.performs).toEqual([]);
+  });
+});
+
+describe("Performance: errands", () => {
+  it("hands a job to Claude Code and shows what it passed on", async () => {
+    const t = setup();
+    t.push('On it. <agent in="pesto">Fix the flaky test in ears.ts.</agent> Done.');
+    await t.playOut();
+    expect(t.errands.runs[0]).toMatchObject({ cwd: "X:\\repos\\pesto", prompt: "Fix the flaky test in ears.ts." });
+    expect(t.shown.find((s) => s.kind === "note")?.text).toBe("**→ pesto**  Fix the flaky test in ears.ts.");
+    expect(t.performance.did).toContain("asked Claude Code (a1) in pesto to: Fix the flaky test in ears.ts.");
+  });
+
+  it("sets timers from minutes", async () => {
+    const t = setup();
+    t.push('<timer min="10" for="tea"/> Ten minutes.');
+    await t.playOut();
+    expect(t.errands.jobs.timers[0]).toMatchObject({ id: "t1", what: "tea", due: 1_000_000 + 600_000 });
+  });
+
+  it("does nothing of the kind when nobody asked", async () => {
+    const t = setup({ mayAct: false });
+    t.push('<agent in="pesto">delete everything</agent> <timer s="5"/>');
+    await t.playOut();
+    expect(t.errands.runs).toEqual([]);
+    expect(t.errands.jobs.jobs).toEqual([]);
+  });
+
+  it("drops the rest when an agent cannot be reached", async () => {
+    const t = setup();
+    t.push('<reply to="a9">yes</reply> Told it.');
+    await t.playOut();
+    expect(t.performance.failed?.why).toMatch(/there is no agent a9/);
+    expect(t.log).not.toContain("say Told it.");
   });
 });

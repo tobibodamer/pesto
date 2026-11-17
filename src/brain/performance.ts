@@ -7,6 +7,7 @@ import type { Paper } from "../stage/bubble";
 import { spokenText, type Line, type Utterance, type Voice } from "../voice/voice";
 import { REACTIONS, type Director, type ReactionName, type Target } from "./director";
 import { Fumble, handle, type Hands } from "./hands";
+import type { Jobs } from "./jobs";
 import type { ScriptItem } from "./script";
 
 export interface PerformanceDeps {
@@ -16,6 +17,7 @@ export interface PerformanceDeps {
   paper: Paper;
   sight: Sight;
   hands: Hands;
+  jobs: Jobs;
   /** Short window ids (w1, w2, …) from the snapshot the script was written against. */
   windowIds: Map<string, number>;
   /** Whether this script may change their desktop. Only one they asked for may. */
@@ -30,10 +32,12 @@ const ALIASES: Record<string, ReactionName> = { look: "glance", go: "approach", 
 
 const WINDOW_VERBS = new Set<string>(["focus", "minimize", "maximize", "restore", "close"] satisfies WindowVerb[]);
 const MEDIA_VERBS = new Set<string>(["play", "pause", "next", "previous"] satisfies MediaVerb[]);
+/** Errands he keeps going after the script is over. */
+const ERRANDS = new Set(["timer", "agent", "reply", "cancel"]);
 /** Directions that change their desktop instead of only moving him. */
-const ACTIONS = new Set(["press", "move", "open", ...WINDOW_VERBS, ...MEDIA_VERBS]);
+const ACTIONS = new Set(["press", "move", "open", ...WINDOW_VERBS, ...MEDIA_VERBS, ...ERRANDS]);
 /** Doing one of these a second time changes nothing, so a script that repeats itself does not get to. */
-const ONCE = new Set(["open", "move", ...WINDOW_VERBS]);
+const ONCE = new Set(["open", "move", ...WINDOW_VERBS, ...ERRANDS]);
 /** Other spellings a model reaches for. */
 const ACTION_ALIASES: Record<string, string> = { click: "press", minimise: "minimize", maximise: "maximize", prev: "previous", skip: "next", resume: "play", stop: "pause", launch: "open", start: "open" };
 
@@ -180,11 +184,11 @@ export class Performance {
   /** Something he does to their desktop. When it does not work, the rest of the script is dropped. */
   private async change(action: string, item: Extract<ScriptItem, { kind: "do" }>) {
     if (!this.deps.mayAct) return trace.log("script", `${action}: he only changes things when asked to`);
-    const same = written(item);
+    const same = written(item) + (item.body ?? "");
     if (ONCE.has(action) && this.changes.has(same)) return trace.log("script", `${same}: already done`);
     this.changes.add(same);
     try {
-      const did = await this.attempt(action, item.attrs);
+      const did = ERRANDS.has(action) ? await this.errand(action, item.attrs, item.body ?? "") : await this.attempt(action, item.attrs);
       this.did.push(did);
       trace.log("script", did);
     } catch (err) {
@@ -227,6 +231,20 @@ export class Performance {
     if (win.state === "minimized") return act();
     const scale = director.world.monitors.find((m) => m.id === win.monitor)?.scale ?? 1;
     return this.touch({ window: hwnd, at: handle(win, action as WindowVerb | "move", scale) }, act);
+  }
+
+  private async errand(action: string, a: Record<string, string>, body: string): Promise<string> {
+    const { jobs, paper, now } = this.deps;
+    if (action === "timer") {
+      const seconds = (parseFloat(a.s ?? "") || 0) + (parseFloat(a.min ?? "") || 0) * 60 + (parseFloat(a.h ?? "") || 0) * 3600;
+      return jobs.timer(seconds, a.for ?? a.what ?? body);
+    }
+    if (action === "cancel") return jobs.cancel(a.at ?? a.to ?? a.id ?? "");
+    const text = body || a.text || a.task || "";
+    const { said, agent } = action === "agent" ? await jobs.start(a.in ?? a.at ?? a.project ?? "", text) : await jobs.reply(a.to ?? a.at ?? "", text, /^(yes|true)$/i.test(a.allow ?? ""));
+    // What reaches the agent is shown as written, so a misheard word is caught.
+    paper.show(`**→ ${agent.name}**  ${text}`, "note", Math.max(5, text.length / 14), now());
+    return said;
   }
 
   /** He goes and presses the spot, and `act` starts as his hand lands on it. */
