@@ -211,6 +211,7 @@ export function* dash(a: Actor, goal: Goal): Routine {
   const s = a.scale;
   const taste = new Map<string, number>();
   const began = a.world.time;
+  const bumps = a.knocks;
   let plan: Leg[] = [];
   let ran = false;
   // Moves made on the glass since he last had his feet down or got his breath back.
@@ -254,11 +255,17 @@ export function* dash(a: Actor, goal: Goal): Routine {
         a.strain("winded", 0.7);
         yield* wait(rand(0.25, 0.45));
       }
-      if (leg.kind === "run") yield* sprint(a, leg.x);
-      else if (leg.kind === "spring") yield* spring(a, leg, ran);
-      else {
-        if (chance(0.6)) a.cue("scrabble");
-        yield* climbTo(a, leg.to.x, leg.to.y);
+      const knocks = a.knocks;
+      try {
+        if (leg.kind === "run") yield* sprint(a, leg.x);
+        else if (leg.kind === "spring") yield* spring(a, leg, ran);
+        else {
+          if (chance(0.6)) a.cue("scrabble");
+          yield* climbTo(a, leg.to.x, leg.to.y);
+        }
+      } catch (err) {
+        // Knocked back by the cursor, he works out a new way from wherever he ends up, until he has had enough of it.
+        if (!(err instanceof Interrupted) || a.knocks === knocks || a.knocks - bumps > 6) throw err;
       }
       ran = leg.kind === "run";
       if (a.mode === "glass") burst++;

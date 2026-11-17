@@ -1,6 +1,6 @@
 import { CAN, LID_OPEN, LID_PEEK } from "../can/can";
 import type { Ledge } from "../world/world";
-import { GRAVITY, type Actor } from "./actor";
+import { GIRTH, GRAVITY, STANDOFF, type Actor } from "./actor";
 import { chance, clamp, easeIn, easeInOut, easeOut, easeOutBack, lerp, noise, pick, rand, sign, smooth, type Vec } from "./math";
 import type { Pose } from "./pose";
 import { Interrupted, tween, until, wait, type Routine } from "./routine";
@@ -29,8 +29,69 @@ export function* walkTo(a: Actor, x: number, run?: boolean): Routine {
   a.sitting = false;
   a.running = run ?? Math.abs(x - a.x) > 260 * a.scale;
   a.walkTarget = x;
-  yield* until(() => a.walkTarget == null || a.mode !== "ground");
+  for (let stops = 0; ; stops++) {
+    yield* until(() => a.walkTarget == null || a.mode !== "ground" || a.balked || a.reeling);
+    a.need("ground");
+    if (a.walkTarget == null) return;
+    if (stops >= PATIENCE) {
+      a.walkTarget = null;
+      yield* swat(a);
+      throw new Interrupted("the cursor is in the way");
+    }
+    if (a.reeling) yield* until(() => !a.reeling);
+    else yield* getPast(a, x);
+    a.need("ground");
+  }
+}
+
+/** How many times the cursor may stop him on one walk before he gives the walk up. */
+const PATIENCE = 4;
+
+/**
+ * Pulled up short by the cursor on his way to `goal`. He eyes it for a moment,
+ * and if it is still there he hops over it. Returns once it has gone, he is
+ * over it, or the hop went wrong and he is on his feet again.
+ */
+function* getPast(a: Actor, goal: number): Routine {
+  const c = a.world.cursor;
+  const s = a.scale;
+  const dir = sign(goal - a.x);
+  const reach = (GIRTH + STANDOFF) * s;
+  // Just behind it is as near as he can get.
+  if ((goal - c.x) * dir < reach) {
+    a.walkTarget = null;
+    return;
+  }
+  const cleared = () => !a.balked || a.reeling || a.mode !== "ground";
+  a.look({ kind: "cursor" }, 1);
+  if (yield* until(cleared, rand(0.25, 0.6))) return;
+
+  const ledge = a.ledge;
+  const gap = a.cursorAhead(dir);
+  const land = c.x + dir * Math.min(reach + 8 * s, (goal - c.x) * dir);
+  // No room to take off, or nowhere to come down: he waits to see if it moves.
+  if (!ledge || gap == null || gap < STANDOFF * s * 0.5 || land < ledge.x1 + EDGE || land > ledge.x2 - EDGE) {
+    yield* until(cleared, 0.8);
+    return;
+  }
+  const gesture = a.gesture;
+  let coil = 0;
+  a.gesture = (p, dt) => {
+    gesture?.(p, dt);
+    p.squash += 0.22 * coil;
+    p.handLY += 8 * coil;
+    p.handRY += 8 * coil;
+  };
+  yield* tween(rand(0.09, 0.14), (u) => (coil = smooth(u)));
+  a.gesture = gesture;
   a.need("ground");
+  if (!a.balked) return;
+  // The higher it is, the steeper he has to go up so as not to clip it with his chest on the way.
+  const v = arc(a, land, ledge.y, Math.max(46, ((a.y - c.y) / s) * 1.3 + 30));
+  a.launch(v.vx, v.vy, ledge.id);
+  yield* until(() => a.mode !== "air", 4);
+  a.need("ground");
+  if (a.ledgeId !== ledge.id) throw new Interrupted("knocked off course");
 }
 
 /** Crouch, wiggle, leap. Sometimes he comes up short and has to haul himself over the edge. */
@@ -63,6 +124,12 @@ export function* jumpTo(a: Actor, tx: number, ledge: Ledge, opts: { sure?: boole
     a.launch(v.vx, v.vy);
     yield* until(() => a.vy >= 0 || a.mode !== "air");
     a.need("air");
+    if (Math.hypot(tx - a.x, hangY - a.y) > 40 * a.scale) {
+      // Knocked off course, he never reaches the edge.
+      yield* until(() => a.mode !== "air");
+      a.need("ground");
+      return;
+    }
     a.x = tx;
     a.y = hangY;
     a.stick(9);
@@ -285,6 +352,10 @@ export function* enterCan(a: Actor): Routine {
     if (a.vy > 0 && Math.abs(a.x - can.x) < CAN.topHalf * can.scale) a.clipY = rim;
     if (a.vy > 0 && a.y > rim + 110 * s) break;
     yield;
+  }
+  if (a.mode === "ground") {
+    can.lid = 0;
+    throw new Interrupted("knocked off course");
   }
   a.vanish();
   can.slam();

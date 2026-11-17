@@ -335,6 +335,7 @@ export class Director {
   private catchAfter = 0;
   /** When a fall from the cursor ends with him clinging to the glass, unless he lands or catches an edge first. */
   private glassAt: number | null = null;
+  private bumpedAt = -Infinity;
   /** Whether he watches the current burst of typing; decided afresh for each burst. */
   private watchingTyping = false;
   private lastCaretAt = -Infinity;
@@ -397,6 +398,19 @@ export class Director {
       a.look({ kind: "user" }, 1.5);
     });
     a.on("lostFooting", () => a.cue("gasp"));
+    a.on("bumped", ({ stumbled }) => {
+      if (world.time - this.bumpedAt < 0.3) return;
+      this.bumpedAt = world.time;
+      a.cue("land");
+      a.look({ kind: "cursor" }, 1.4);
+      if (stumbled) {
+        a.cue("eep");
+        a.feel("annoyed", 3.5);
+      } else {
+        a.feel("surprised", 0.7);
+        if (chance(0.35)) a.cue("huh");
+      }
+    });
 
     world.on("focusChanged", (w) => {
       if (!w) return;
@@ -796,7 +810,9 @@ export class Director {
     const c = this.world.cursor;
     // A cursor darting about right next to him is too tempting.
     if (c.speed > 1400 && Math.abs(c.x - a.x) < 260 && Math.abs(c.y - a.y) < 200 && a.ledge) {
-      void a.run(moves.jumpTo(a, clamp(c.x, a.ledge.x1 + 20, a.ledge.x2 - 20), a.ledge, { sure: true }));
+      // He lands just short of it: it is solid to him.
+      const short = c.x - sign(c.x - a.x) * 56 * a.scale;
+      void a.run(moves.jumpTo(a, clamp(short, a.ledge.x1 + 20, a.ledge.x2 - 20), a.ledge, { sure: true }));
       return;
     }
     const roll = rand(0, 1);

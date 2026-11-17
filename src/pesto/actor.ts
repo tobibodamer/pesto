@@ -3,7 +3,7 @@ import { CAN } from "../can/can";
 import type { Rect } from "../sense/types";
 import type { Ledge, World } from "../world/world";
 import { Climb } from "./climb";
-import { Spring, approach, chance, clamp, clamp01, noise, pick, rand, sign, type Vec } from "./math";
+import { Spring, approach, chance, clamp, clamp01, lerp, noise, pick, rand, sign, smooth, type Vec } from "./math";
 import { EMOTIONS, REST, applyPose, clonePose, type Emotion, type Pose } from "./pose";
 import { Puppet } from "./puppet";
 import { Interrupted, type Routine } from "./routine";
@@ -40,6 +40,8 @@ export interface ActorEvents {
   lostFooting: void;
   /** Slid all the way down the glass. */
   slid: void;
+  /** Ran into the cursor, at `speed` units per second. `stumbled` when it took his feet from under him or sent him tumbling. */
+  bumped: { speed: number; stumbled: boolean };
   /** A moment that should make a sound: "knock", "clank", "lid", "clap", "thud", "swat". */
   cue: string;
 }
@@ -63,6 +65,38 @@ const EFFORT = {
 };
 type Effort = keyof typeof EFFORT;
 const SLIDE_SPEED = 330;
+/**
+ * His body as the cursor meets it: an ellipse standing on his feet, this far
+ * to each side and this tall, in units. He cannot move into the cursor; it can
+ * move into him, which is how he is petted and picked up.
+ */
+export const GIRTH = 34;
+const HEIGHT = 150;
+/** How far short of the cursor he pulls up, in units. */
+export const STANDOFF = 18;
+/** How hard he can brake, in units per second squared, and how long the cursor has to be in his way before he starts to. */
+const BRAKE = 1800;
+const REACTION = 0.13;
+/** Below this, in units per second, meeting the cursor is only a touch. */
+const BUMP_AT = 45;
+/** Running into the cursor this fast may take his feet from under him; hitting it this fast in the air sends him tumbling. */
+const STUMBLE_AT = 260;
+const TUMBLE_AT = 520;
+
+/** Thrown back along the ground after running into the cursor, or backing off from it. */
+interface Reel {
+  t: number;
+  seconds: number;
+  /** Pixels per second he is still sliding back at. */
+  v: number;
+  /** The way he was going. */
+  dir: number;
+  /** How hard he hit it, 0..1. */
+  power: number;
+  /** He goes over onto his back. */
+  fall: boolean;
+  down: boolean;
+}
 /** Height of the scruff above his feet, in units. */
 const SCRUFF = 100;
 
@@ -127,6 +161,15 @@ export class Actor {
   private rideDrop = 0;
   private rideVx = 0;
   private walkPhase = 0;
+  /** How fast he is walking right now, in pixels per second. */
+  private pace = 0;
+  /** Seconds the cursor has been in the way of his walk. */
+  private spotted = 0;
+  private reel: Reel | null = null;
+  /** Standing in front of the cursor with somewhere still to walk to beyond it. */
+  balked = false;
+  /** How many times he has run into the cursor. */
+  knocks = 0;
   private climb: Climb | null = null;
   /** How much of the current climb has been heard. */
   private climbBeats = 0;
@@ -302,6 +345,54 @@ export class Actor {
     return dx * dx + dy * dy < 1;
   }
 
+  /** Whether he is being thrown back along the ground. */
+  get reeling() {
+    return this.reel !== null;
+  }
+
+  /**
+   * How far ahead of his front the cursor stands in his way as he goes `dir`
+   * along the ground, in pixels: below zero when it is already in him, null
+   * when it is behind him or not at his height.
+   */
+  cursorAhead(dir: number): number | null {
+    const c = this.world.cursor;
+    const s = this.scale;
+    if (c.y >= this.y - 3 * s || c.y <= this.y - HEIGHT * s) return null;
+    const off = (c.x - this.x) * dir;
+    return off > 0 ? off - GIRTH * s : null;
+  }
+
+  /**
+   * Stops him at the cursor if the move from `fromX`, `fromY` to where he is
+   * now took him into it. Returns the way from it to him, or null when he
+   * never touched it or it was in him already.
+   */
+  private meetCursor(fromX: number, fromY: number): Vec | null {
+    const c = this.world.cursor;
+    const rx = GIRTH * this.scale;
+    const ry = (HEIGHT / 2) * this.scale;
+    // The cursor as seen from the middle of him, in half widths and half heights, before the move and after.
+    const ax = (c.x - fromX) / rx;
+    const ay = (c.y - fromY) / ry + 1;
+    const dx = (c.x - this.x) / rx - ax;
+    const dy = (c.y - this.y) / ry + 1 - ay;
+    const out = ax * ax + ay * ay - 1;
+    const dd = dx * dx + dy * dy;
+    const closing = ax * dx + ay * dy;
+    if (out <= 0 || dd === 0 || closing >= 0) return null;
+    const disc = closing * closing - dd * out;
+    if (disc < 0) return null;
+    const t = (-closing - Math.sqrt(disc)) / dd;
+    if (t > 1) return null;
+    this.x = lerp(fromX, this.x, t);
+    this.y = lerp(fromY, this.y, t);
+    const nx = -(ax + dx * t) / rx;
+    const ny = -(ay + dy * t) / ry;
+    const n = Math.hypot(nx, ny);
+    return { x: nx / n, y: ny / n };
+  }
+
   /** Puts him on a ledge, standing. */
   place(ledge: Ledge, x: number) {
     this.mode = "ground";
@@ -311,6 +402,8 @@ export class Actor {
     this.vx = this.vy = 0;
     this.sliding = false;
     this.clipY = null;
+    this.pace = 0;
+    this.reel = null;
     this.rideHwnd = ledge.hwnd;
     const w = this.world.window(ledge.hwnd);
     this.rideOffset = w ? this.x - w.rect.x : 0;
@@ -327,6 +420,8 @@ export class Actor {
     this.sitting = false;
     this.airTime = 0;
     this.fallFrom = this.y;
+    this.reel = null;
+    this.balked = false;
     if (Math.abs(vx) > 20) this.dir = sign(vx);
   }
 
@@ -339,6 +434,8 @@ export class Actor {
     this.ledgeId = null;
     this.sitting = false;
     this.tumble = 0;
+    this.reel = null;
+    this.balked = false;
   }
 
   /** Hides him inside the can. */
@@ -381,6 +478,8 @@ export class Actor {
     this.sitting = false;
     this.clipY = null;
     this.tumble = 0;
+    this.reel = null;
+    this.balked = false;
     this.swing.snap(0);
     this.shakeFlips = 0;
     this.emit("grabbed", undefined);
@@ -636,21 +735,62 @@ export class Actor {
     this.y = ledge.y;
 
     const s = this.scale;
-    if (this.walkTarget != null) {
+    if (this.walkTarget == null || this.reel) {
+      this.pace = 0;
+      this.balked = false;
+    }
+    if (this.reel) {
+      this.stagger(this.reel, dt, pose, ledge);
+      if (rideWin) this.rideOffset = this.x - rideWin.rect.x;
+    } else if (this.walkTarget != null) {
       this.sitting = false;
       const goal = clamp(this.walkTarget, ledge.x1 + 14, ledge.x2 - 14);
       const dx = goal - this.x;
-      const speed = (this.running ? RUN_SPEED * (this.hurried ? SPRINT : 1) : WALK_SPEED) * s;
-      const step = speed * dt;
-      if (Math.abs(dx) <= step) {
+      const dir = sign(dx);
+      const cruise = (this.running ? RUN_SPEED * (this.hurried ? SPRINT : 1) : WALK_SPEED) * s;
+      const gap = this.cursorAhead(dir);
+      const blocked = gap != null && gap < Math.abs(dx);
+      const room = blocked ? gap - STANDOFF * s : Infinity;
+      this.spotted = blocked ? this.spotted + dt : 0;
+      let pace = cruise;
+      // From a standstill he sees it at once; on the move it takes him a moment, and then he cannot stop dead.
+      if (blocked && (this.pace === 0 || this.spotted > REACTION)) {
+        pace = Math.min(cruise, Math.max(Math.sqrt(2 * BRAKE * s * Math.max(0, room)), this.pace - BRAKE * s * dt));
+        if (room < 0.5 && pace < BUMP_AT * s) pace = 0;
+      }
+      this.balked = room < 1.5;
+      const step = pace * dt;
+      if (blocked && gap <= 0) {
+        // It came to him: he backs off from it if there is room to.
+        pace = 0;
+        const back = STANDOFF * s - gap + 2;
+        const to = this.x - dir * back;
+        if (to > ledge.x1 + 14 && to < ledge.x2 - 14) this.reel = { t: 0, seconds: 0.3, v: -dir * back * 6, dir, power: 0.2, fall: false, down: false };
+      } else if (blocked && step >= gap) {
+        this.x += dir * gap;
+        this.dir = dir;
+        if (pace >= BUMP_AT * s) this.rebound(dir, pace);
+        pace = 0;
+      } else if (Math.abs(dx) <= step) {
         this.x = goal;
         this.walkTarget = null;
-      } else {
-        this.dir = sign(dx);
-        this.x += this.dir * step;
+        pace = 0;
+      } else if (step > 0) {
+        this.dir = dir;
+        this.x += dir * step;
         this.walkPhase += ((step / s) / (this.running ? 62 : 36)) * Math.PI * 2;
-        walkPose(pose, this.walkPhase, this.dir, this.running);
+        walkPose(pose, this.walkPhase, dir, this.running);
+        // Braking, he leans back against his own speed.
+        const skid = clamp01(1 - pace / cruise) * (this.running ? 1 : 0.4);
+        pose.lean -= dir * 0.36 * skid;
+        pose.handLY -= 12 * skid;
+        pose.handRY -= 12 * skid;
+        pose.squash += 0.06 * skid;
+      } else {
+        this.dir = dir;
+        applyPose(pose, { facing: dir * 0.5, lean: -dir * 0.05 });
       }
+      this.pace = pace;
       if (rideWin) this.rideOffset = this.x - rideWin.rect.x;
     } else if (this.sitting) {
       const t = this.puppet.time;
@@ -693,14 +833,96 @@ export class Actor {
     this.rideVx = approach(this.rideVx, 0, 6, dt);
   }
 
+  /** Thrown back off the cursor he has just run into along the ground at `speed` pixels per second. */
+  private rebound(dir: number, speed: number) {
+    const s = this.scale;
+    const power = clamp01(speed / (RUN_SPEED * SPRINT * s));
+    const fall = speed >= STUMBLE_AT * s && chance(0.35 + power * 0.55);
+    this.reel = { t: 0, seconds: fall ? rand(1.6, 2) : 0.32 + power * 0.3, v: -dir * speed * (fall ? 1.1 : 0.85), dir, power, fall, down: false };
+    this.knocks++;
+    this.emit("bumped", { speed: speed / s, stumbled: fall });
+  }
+
+  private stagger(r: Reel, dt: number, pose: Pose, ledge: Ledge) {
+    r.t += dt;
+    this.x = clamp(this.x + r.v * dt, ledge.x1 + 14, ledge.x2 - 14);
+    r.v *= Math.exp(-6 * dt);
+    const d = r.dir;
+    if (!r.fall) {
+      // Rocked back on his heels, paws up.
+      const k = Math.pow(Math.sin(clamp01(r.t / r.seconds) * Math.PI), 0.7) * (0.45 + r.power);
+      applyPose(pose, { facing: d * 0.5 });
+      pose.lean -= d * 0.3 * k;
+      pose.headX -= d * 4 * k;
+      pose.squash += 0.07 * k;
+      pose.handLX -= d * 6 * k;
+      pose.handLY -= 20 * k;
+      pose.handRX -= d * 6 * k;
+      pose.handRY -= 20 * k;
+      if (d > 0) pose.footLX -= 9 * k;
+      else pose.footRX += 9 * k;
+      addEmotion(pose, "surprised", Math.min(1, k * 1.4));
+    } else {
+      // Tottering backwards with his arms going round, over onto his back, a moment there, and up again.
+      const totter = clamp01(1 - (r.t - 0.3) / 0.12);
+      const flat = smooth(clamp01((r.t - 0.3) / 0.16)) * smooth(clamp01((r.seconds - r.t) / 0.35));
+      if (!r.down && r.t >= 0.44) {
+        r.down = true;
+        this.landKick = 0.8;
+        this.dizzy = Math.max(this.dizzy, r.seconds - r.t - 0.2);
+        this.cue("thud");
+      }
+      const wind = r.t * 30;
+      const kick = Math.sin(r.t * 15) * 5 * flat;
+      applyPose(pose, { facing: d * 0.45 * (1 - flat), spin: -d * (Math.PI / 2) * flat, lift: -9 * flat });
+      pose.lean -= d * 0.4 * totter;
+      pose.handLX = lerp(pose.handLX, -40 + Math.cos(wind) * 10, totter) - 6 * flat;
+      pose.handLY = lerp(pose.handLY, -66 + Math.sin(wind) * 16, totter) - 44 * flat;
+      pose.handRX = lerp(pose.handRX, 40 - Math.cos(wind) * 10, totter) + 6 * flat;
+      pose.handRY = lerp(pose.handRY, -66 - Math.sin(wind) * 16, totter) - 44 * flat;
+      pose.footLY -= Math.max(0, Math.sin(wind * 0.8)) * 7 * totter - kick;
+      pose.footRY -= Math.max(0, -Math.sin(wind * 0.8)) * 7 * totter + kick;
+      addEmotion(pose, "scared", totter);
+    }
+    if (r.t >= r.seconds) this.reel = null;
+  }
+
+  /** Thrown back off the cursor in mid-air, along `n`, the way from it to him. */
+  private ricochet(n: Vec) {
+    const s = this.scale;
+    const into = Math.max(0, -(this.vx * n.x + this.vy * n.y));
+    this.vx += n.x * into * 1.4;
+    this.vy += n.y * into * 1.4;
+    // Square on top of it he would balance there, so he slips off to one side.
+    if (Math.abs(n.x) < 0.3) this.vx += ((n.x || this.dir) < 0 ? -1 : 1) * 90 * s;
+    this.landOn = null;
+    if (into < BUMP_AT * s) return;
+    const hard = into >= TUMBLE_AT * s;
+    if (hard && this.tumble === 0) this.tumble = sign(this.vx) * rand(5, 8);
+    this.knocks++;
+    this.emit("bumped", { speed: into / s, stumbled: hard });
+  }
+
+  /** Knocked off the glass by the cursor he climbed or slid into, away from it along `n`. */
+  private dislodge(n: Vec) {
+    const s = this.scale;
+    this.climbTarget = null;
+    this.launch(n.x * 170 * s, Math.min(0, n.y) * 170 * s - 50 * s);
+    this.knocks++;
+    this.emit("bumped", { speed: 170, stumbled: false });
+  }
+
   // ───────────────────────── air ─────────────────────────
 
   private updateAir(dt: number, pose: Pose) {
     this.airTime += dt;
     const prevY = this.y;
     this.vy += GRAVITY * this.scale * dt;
+    const fromX = this.x;
     this.x += this.vx * dt;
     this.y += this.vy * dt;
+    const off = this.meetCursor(fromX, prevY);
+    if (off) this.ricochet(off);
 
     const v = this.world.virtual;
     if (this.x < v.x + 30) {
@@ -785,6 +1007,8 @@ export class Actor {
       const prevY = this.y;
       this.vy = approach(this.vy, SLIDE_SPEED * s, 2.2, dt);
       this.y += this.vy * dt;
+      const off = this.meetCursor(this.x, prevY);
+      if (off) return this.dislodge(off);
       const l = this.world.ledgeBelow(this.x, prevY);
       if (l && this.y >= l.y) {
         this.place(l, this.x);
@@ -839,8 +1063,12 @@ export class Actor {
         else if (climb.doing === "slip" && !this.talking && chance(0.35)) this.cue("eep");
       }
       if (dt > 0 && Math.abs(climb.x - this.x) / dt > 40 * s) this.dir = sign(climb.x - this.x);
+      const fromX = this.x;
+      const fromY = this.y;
       this.x = climb.x;
       this.y = climb.y;
+      const off = this.meetCursor(fromX, fromY);
+      if (off) return this.dislodge(off);
       this.puppet.planted = true;
       applyPose(pose, climb.pose());
       if (climb.doing === "pull") {
