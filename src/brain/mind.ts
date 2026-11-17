@@ -1,6 +1,6 @@
-import type { Config } from "../config";
+import { mindSettings, type Config } from "../config";
 import { trace } from "../debug/trace";
-import { http, sse } from "../net";
+import { http } from "../net";
 import type { Actor } from "../pesto/actor";
 import * as moves from "../pesto/moves";
 import type { Sight } from "../sense/sight";
@@ -13,7 +13,8 @@ import type { Journal } from "./journal";
 import { Performance } from "./performance";
 import { personaPrompt, wakeMessage } from "./persona";
 import { ScriptParser } from "./script";
-import { toolsFor, Toolbox, type Tool, type ToolCall } from "./tools";
+import { PROVIDERS, type Message, type Said } from "./providers";
+import { toolsFor, Toolbox, type Tool } from "./tools";
 
 export type WakeReason =
   /** The person said something to him. */
@@ -32,22 +33,12 @@ const MAX_TURNS = 14;
 /** How many times in one wake he may stop to find something out, or start again after something he tried did not work, before he has to answer. */
 const MAX_STEPS = 8;
 
-type Message =
-  | { role: "system" | "user"; content: string }
-  | { role: "assistant"; content: string | null; tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[] }
-  | { role: "tool"; tool_call_id: string; content: string };
-
 /** One request to the model within a wake, and what came of it. */
 interface Step {
   wrote: string;
   calls: { name: string; arguments: string; result: string }[];
   /** Why something he tried to do to their desktop did not work, when it did not. */
   failed?: string;
-}
-
-interface Delta {
-  content?: string;
-  tool_calls?: { index: number; id?: string; function?: { name?: string; arguments?: string } }[];
 }
 
 /**
@@ -90,8 +81,16 @@ export class Mind {
   ) {}
 
   get configured() {
-    const m = this.deps.config.mind;
-    return !!(m.baseUrl && m.model);
+    const m = mindSettings(this.deps.config.mind);
+    return !!(m.baseUrl && m.model && (m.provider !== "gemini" || m.apiKey));
+  }
+
+  private get provider() {
+    return PROVIDERS[this.deps.config.mind.provider] ?? PROVIDERS.openai;
+  }
+
+  private get offersTools() {
+    return this.provider.tools === "always" || !this.toolless;
   }
 
   /**
@@ -110,7 +109,7 @@ export class Mind {
   async wake(reason: WakeReason): Promise<void> {
     const { config, journal, director, actor, voice, paper, sight, hands, jobs } = this.deps;
     if (!this.configured) {
-      if (!this.warned) console.warn("mind: no model configured (config.json → mind.baseUrl, mind.model)");
+      if (!this.warned) console.warn("mind: no model configured (settings → Mind)");
       this.warned = true;
       return;
     }
@@ -183,7 +182,7 @@ export class Mind {
       },
     });
     const messages: Message[] = [
-      { role: "system", content: personaPrompt({ audioTags: voice.audible && /_v[34]/.test(config.voice.model), tools: !this.toolless, acts: mayAct, you: config.you, today: new Date(journal.now()) }) },
+      { role: "system", content: personaPrompt({ audioTags: voice.audible && /_v[34]/.test(config.voice.model), tools: this.offersTools, acts: mayAct, you: config.you, today: new Date(journal.now()) }) },
       ...this.turns.flatMap((t): Message[] => [
         { role: "user", content: t.user },
         { role: "assistant", content: t.assistant },
@@ -220,16 +219,12 @@ export class Mind {
         performance.recover();
         const note = failed && `Your ${failed.direction} did not work: ${failed.why}. Nothing you wrote after it was said or done.`;
         if (said.calls.length) {
-          messages.push({
-            role: "assistant",
-            content: said.text || null,
-            tool_calls: said.calls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.arguments } })),
-          });
+          messages.push({ role: "assistant", content: said.text, calls: said.calls });
           for (const call of said.calls) {
             const result = note ? `Not done. ${note}` : await toolbox.run(call);
             taken.calls.push({ name: call.name, arguments: call.arguments, result });
             trace.log("mind", `${call.name} ${call.arguments} → ${result.replace(/\s+/g, " ").slice(0, 160)}`);
-            messages.push({ role: "tool", tool_call_id: call.id, content: result });
+            messages.push({ role: "tool", callId: call.id, name: call.name, content: result });
           }
         } else {
           messages.push({ role: "assistant", content: said.text }, { role: "user", content: `${note} Tell them in a few words, or try another way.` });
@@ -272,52 +267,22 @@ export class Mind {
    * calls are collected and returned. With `mayCall` false he has to answer
    * with what he already knows.
    */
-  private async ask(messages: Message[], tools: readonly Tool[], mayCall: boolean, signal: AbortSignal, onText: (text: string) => void): Promise<{ text: string; calls: ToolCall[] }> {
-    const { config } = this.deps;
-    const body = (offer: boolean) =>
-      JSON.stringify({
-        model: config.mind.model,
-        temperature: config.mind.temperature,
-        stream: true,
-        // Room for some thinking as well: a model that reasons first spends it out of the same allowance.
-        max_tokens: 1400,
-        ...(config.mind.reasoningEffort ? { reasoning_effort: config.mind.reasoningEffort } : {}),
-        ...(offer ? { tools, tool_choice: mayCall ? "auto" : "none" } : {}),
-        messages,
-      });
-    const post = (offer: boolean) =>
-      http(`${config.mind.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-        method: "POST",
-        signal,
-        headers: { "content-type": "application/json", authorization: `Bearer ${config.mind.apiKey}` },
-        body: body(offer),
-      });
-    let res = await post(!this.toolless);
-    if (!res.ok && !this.toolless && (res.status === 400 || res.status === 422) && messages.every((m) => m.role !== "tool")) {
+  private async ask(messages: Message[], tools: readonly Tool[], mayCall: boolean, signal: AbortSignal, onText: (text: string) => void): Promise<Said> {
+    const mind = mindSettings(this.deps.config.mind);
+    const provider = this.provider;
+    const post = (offer: boolean) => {
+      const req = provider.request(mind, { messages, tools, offer, mayCall });
+      return http(req.url, { method: "POST", signal, headers: { "content-type": "application/json", ...req.headers }, body: JSON.stringify(req.body) });
+    };
+    let res = await post(this.offersTools);
+    if (!res.ok && provider.tools === "maybe" && !this.toolless && (res.status === 400 || res.status === 422) && messages.every((m) => m.role !== "tool")) {
       // Some endpoints and models take no tools at all. He manages with window titles there.
       console.warn(`mind: the model turned down tools (${res.status}); going on without`);
       this.toolless = true;
       res = await post(false);
     }
     if (!res.ok) throw new Error(`${res.status}: ${(await res.text()).slice(0, 300)}`);
-
-    let text = "";
-    const calls: ToolCall[] = [];
-    for await (const data of sse(res)) {
-      if (data === "[DONE]") break;
-      const delta = (JSON.parse(data) as { choices?: { delta?: Delta }[] }).choices?.[0]?.delta;
-      if (delta?.content) {
-        text += delta.content;
-        onText(delta.content);
-      }
-      for (const part of delta?.tool_calls ?? []) {
-        const call = (calls[part.index] ??= { id: "", name: "", arguments: "" });
-        if (part.id) call.id = part.id;
-        if (part.function?.name) call.name += part.function.name;
-        if (part.function?.arguments) call.arguments += part.function.arguments;
-      }
-    }
-    return { text, calls: calls.filter(Boolean) };
+    return provider.read(res, onText);
   }
 }
 
