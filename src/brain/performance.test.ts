@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Line, Utterance, Voice } from "../voice/voice";
+import { Fumble } from "./hands";
 import { Performance, type PerformanceDeps } from "./performance";
 import { parseScript } from "./script";
 
@@ -46,7 +47,7 @@ function fakeVoice(audible = true) {
   return { voice, lines };
 }
 
-function setup(opts: { audible?: boolean; captions?: boolean } = {}) {
+function setup(opts: { audible?: boolean; captions?: boolean; mayAct?: boolean } = {}) {
   const log: string[] = [];
   const { voice, lines } = fakeVoice(opts.audible);
   const performs: { name: string; args: Record<string, unknown>; done: () => void }[] = [];
@@ -60,21 +61,48 @@ function setup(opts: { audible?: boolean; captions?: boolean } = {}) {
       actor.stopped++;
       performs.forEach((p) => p.done());
     },
+    feel() {},
   };
   const paper = { hidden: 0, show: (text: string, kind: string, seconds?: number) => void shown.push({ text, kind, seconds }), hide: () => void paper.hidden++ };
   const director = {
     can: { x: 500, y: 900 },
-    world: { actionPoint: { x: 7, y: 8 } as { x: number; y: number } | null },
+    world: {
+      actionPoint: { x: 7, y: 8 } as { x: number; y: number } | null,
+      monitors: [{ id: 0, scale: 1 }],
+      window: (hwnd: number | null) => (hwnd === 4242 ? { hwnd, rect: { x: 0, y: 0, w: 800, h: 600 }, monitor: 0, state: director.windowState } : null),
+    },
+    windowState: "normal",
+    /** Set to have him stopped on the way, before his hand lands. */
+    stoppedShort: false,
     perform(name: string, args: Record<string, unknown>) {
       log.push(`do ${name}`);
       const done = latch();
       performs.push({ name, args, done: done.open });
-      return done.promise.then(() => true);
+      return done.promise.then(() => {
+        if (!director.stoppedShort) (args.act as (() => void) | undefined)?.();
+        return !director.stoppedShort;
+      });
     },
   };
   const sight = {
-    get: (id: string) => (id === "e3" ? { kind: "button", name: "Search" } : null),
+    get: (id: string) => (id === "e3" ? { id, hwnd: 77, key: 9, kind: "button", name: "Search" } : null),
     locate: (id: string) => (id === "e3" ? { window: 77, at: { x: 4, y: 5 } } : null),
+  };
+  const hands = {
+    /** Set to make whatever he tries next go wrong, for this reason. */
+    fail: null as string | null,
+    tried: [] as string[],
+    attempt(what: string) {
+      hands.tried.push(what);
+      log.push(`act ${what}`);
+      return hands.fail ? Promise.reject(new Fumble(hands.fail)) : Promise.resolve(what);
+    },
+    press: (seen: { name: string }) => hands.attempt(`press ${seen.name}`),
+    focus: (seen: { name: string }) => hands.attempt(`focus ${seen.name}`),
+    window: (hwnd: number, verb: string) => hands.attempt(`${verb} ${hwnd}`),
+    move: (hwnd: number, to: string) => hands.attempt(`move ${hwnd} ${to}`),
+    media: (verb: string) => hands.attempt(verb),
+    open: (what: string) => hands.attempt(`open ${what}`),
   };
   const performance = new Performance({
     director,
@@ -82,7 +110,9 @@ function setup(opts: { audible?: boolean; captions?: boolean } = {}) {
     voice,
     paper,
     sight,
+    hands,
     windowIds: new Map([["w2", 4242]]),
+    mayAct: opts.mayAct ?? true,
     captions: opts.captions ?? false,
     now: () => 12,
   } as unknown as PerformanceDeps);
@@ -107,7 +137,7 @@ function setup(opts: { audible?: boolean; captions?: boolean } = {}) {
     }
     await performance.finish();
   };
-  return { performance, push, playOut, lines, performs, shown, actor, paper, director, log };
+  return { performance, push, playOut, lines, performs, shown, actor, paper, director, hands, log };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -323,6 +353,166 @@ describe("Performance: directions", () => {
     expect(t.performance.said).toEqual(["Ow."]);
     expect(warn).toHaveBeenCalledOnce();
     warn.mockRestore();
+  });
+});
+
+describe("Performance: changing their desktop", () => {
+  it("presses the thing as his hand lands, and holds the words after it until then", async () => {
+    const t = setup();
+    t.push('Fine. <press at="e3"/> Done.');
+    await settle();
+    t.lines[0].started();
+    t.lines[0].finished();
+    await settle();
+    expect(t.performs.map((p) => [p.name, p.args.target])).toEqual([["press", { window: 77, at: { x: 4, y: 5 } }]]);
+    expect(t.hands.tried).toEqual([]);
+    expect(t.lines[1].played).toBe(false);
+
+    t.performs[0].done();
+    await settle();
+    expect(t.hands.tried).toEqual(["press Search"]);
+    expect(t.lines[1].played).toBe(true);
+    expect(t.performance.did).toEqual(["press Search"]);
+    expect(t.performance.failed).toBeNull();
+  });
+
+  it("takes click for press", async () => {
+    const t = setup();
+    t.push('<click at="e3"/>');
+    await t.playOut();
+    expect(t.hands.tried).toEqual(["press Search"]);
+  });
+
+  it("puts the cursor in a field, and brings a window forward, under the same name", async () => {
+    const t = setup();
+    t.push('<focus at="e3"/><focus at="w2"/>');
+    await t.playOut();
+    expect(t.hands.tried).toEqual(["focus Search", "focus 4242"]);
+  });
+
+  it("goes to the caption button for what he does to a window", async () => {
+    const t = setup();
+    t.push('<close at="w2"/><minimise at="w2"/><move at="w2" to="top right"/>');
+    await t.playOut();
+    expect(t.performs.map((p) => p.args.target)).toEqual([
+      { window: 4242, at: { x: 777, y: 16 } },
+      { window: 4242, at: { x: 685, y: 16 } },
+      { window: 4242, at: { x: 400, y: 16 } },
+    ]);
+    expect(t.hands.tried).toEqual(["close 4242", "minimize 4242", "move 4242 top right"]);
+  });
+
+  it("restores a minimised window without going anywhere", async () => {
+    const t = setup();
+    t.director.windowState = "minimized";
+    t.push('<restore at="w2"/>');
+    await t.playOut();
+    expect(t.performs).toEqual([]);
+    expect(t.hands.tried).toEqual(["restore 4242"]);
+  });
+
+  it("works what is playing from where he stands", async () => {
+    const t = setup();
+    t.push("<pause/><next/>");
+    await t.playOut();
+    expect(t.performs).toEqual([]);
+    expect(t.hands.tried).toEqual(["pause", "next"]);
+  });
+
+  it("opens things by name, and brings a window he was told to open to the front instead", async () => {
+    const t = setup();
+    t.push('<open what="Downloads"/><launch app="Spotify"/><open at="w2"/>');
+    await t.playOut();
+    expect(t.hands.tried).toEqual(["open Downloads", "open Spotify", "focus 4242"]);
+    expect(t.performs.map((p) => p.args.target)).toEqual([{ window: 4242, at: { x: 400, y: 16 } }]);
+  });
+
+  it("drops the rest of the script when it does not work, and plays again once that is dealt with", async () => {
+    const t = setup();
+    t.hands.fail = "it is greyed out";
+    t.push('<press at="e3"/> Done. <dance/>');
+    await t.playOut();
+    expect(t.performance.failed).toEqual({ direction: '<press at="e3"/>', why: "it is greyed out" });
+    expect(t.performs.map((p) => p.name)).toEqual(["press"]);
+    expect(t.lines.map((l) => [l.played, l.discarded])).toEqual([[false, true]]);
+    expect(t.performance.said).toEqual([]);
+    expect(t.performance.did).toEqual(["tried press (at button «Search»), which did not work: it is greyed out"]);
+
+    t.push("Still dropped.");
+    expect(t.lines.length).toBe(1);
+    t.performance.recover();
+    t.hands.fail = null;
+    t.push("Hm.");
+    await t.playOut();
+    expect(t.performance.said).toEqual(["Hm."]);
+  });
+
+  it("says when what he was doing to their desktop is over, without waiting for his talking", async () => {
+    const t = setup();
+    let over = false;
+    t.push('<press at="e3"/> There you go.');
+    void t.performance.changed().then(() => (over = true));
+    await settle();
+    expect(over).toBe(false);
+    t.performs[0].done();
+    await settle();
+    expect(over).toBe(true);
+    expect(t.lines[0].played).toBe(true);
+    t.lines[0].started();
+    t.lines[0].finished();
+    await t.performance.finish();
+  });
+
+  it("fails on something he never saw, without setting off", async () => {
+    const t = setup();
+    t.push('<press at="Save"/> Done.');
+    await t.playOut();
+    expect(t.performs).toEqual([]);
+    expect(t.hands.tried).toEqual([]);
+    expect(t.performance.failed?.why).toContain("look into the window first");
+    expect(t.performance.said).toEqual([]);
+  });
+
+  it("does not open or close the same thing twice in one script, but presses as often as written", async () => {
+    const t = setup();
+    t.push('<open what="Downloads"/><open what="Downloads"/><close at="w2"/><close at="w2"/><press at="e3"/><press at="e3"/><next/><next/>');
+    await t.playOut();
+    expect(t.hands.tried).toEqual(["open Downloads", "close 4242", "press Search", "press Search", "next", "next"]);
+  });
+
+  it("says what a window takes when told to press one", async () => {
+    const t = setup();
+    t.push('<press at="w2"/>');
+    await t.playOut();
+    expect(t.hands.tried).toEqual([]);
+    expect(t.performance.failed?.why).toContain("w2 is a window, not something to press");
+  });
+
+  it("fails on a window that is not there", async () => {
+    const t = setup();
+    t.push('<close at="w9"/>');
+    await t.playOut();
+    expect(t.hands.tried).toEqual([]);
+    expect(t.performance.failed?.why).toBe('there is no window "w9"; the windows are w2');
+  });
+
+  it("fails when he is stopped before his hand lands", async () => {
+    const t = setup();
+    t.director.stoppedShort = true;
+    t.push('<press at="e3"/> Done.');
+    await t.playOut();
+    expect(t.hands.tried).toEqual([]);
+    expect(t.performance.failed?.why).toBe("something stopped you before you got to it");
+  });
+
+  it("changes nothing in a script they did not ask for", async () => {
+    const t = setup({ mayAct: false });
+    t.push('<close at="w2"/> There. <pause/>');
+    await t.playOut();
+    expect(t.performs).toEqual([]);
+    expect(t.hands.tried).toEqual([]);
+    expect(t.performance.failed).toBeNull();
+    expect(t.performance.said).toEqual(["There."]);
   });
 });
 

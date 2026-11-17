@@ -1,4 +1,5 @@
 import type { Config } from "../config";
+import { trace } from "../debug/trace";
 import { http, sse } from "../net";
 import type { Actor } from "../pesto/actor";
 import * as moves from "../pesto/moves";
@@ -6,11 +7,12 @@ import type { Sight } from "../sense/sight";
 import type { Paper } from "../stage/bubble";
 import type { Voice } from "../voice/voice";
 import type { Director } from "./director";
+import type { Hands } from "./hands";
 import type { Journal } from "./journal";
 import { Performance } from "./performance";
 import { personaPrompt, wakeMessage } from "./persona";
 import { ScriptParser } from "./script";
-import { TOOLS, Toolbox, type ToolCall } from "./tools";
+import { toolsFor, Toolbox, type Tool, type ToolCall } from "./tools";
 
 export type WakeReason =
   /** The person said something to him. */
@@ -24,13 +26,21 @@ interface Turn {
 }
 
 const MAX_TURNS = 14;
-/** How many times in one wake he may stop to look at something before he has to answer. */
-const MAX_LOOKS = 3;
+/** How many times in one wake he may stop to find something out, or start again after something he tried did not work, before he has to answer. */
+const MAX_STEPS = 8;
 
 type Message =
   | { role: "system" | "user"; content: string }
   | { role: "assistant"; content: string | null; tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[] }
   | { role: "tool"; tool_call_id: string; content: string };
+
+/** One request to the model within a wake, and what came of it. */
+interface Step {
+  wrote: string;
+  calls: { name: string; arguments: string; result: string }[];
+  /** Why something he tried to do to their desktop did not work, when it did not. */
+  failed?: string;
+}
 
 interface Delta {
   content?: string;
@@ -48,6 +58,8 @@ export class Mind {
   lastSpokeAt = -Infinity;
   /** What he said out loud the last time he spoke. */
   lastSaid = "";
+  /** The last wake in full, for looking into why he did what he did: `pesto.mind.last`. */
+  last: { reason: string; snapshot: string; steps: Step[]; did: string[]; error?: string } | null = null;
 
   private turns: Turn[] = [];
   private journalMark = 0;
@@ -66,6 +78,7 @@ export class Mind {
       voice: Voice;
       paper: Paper;
       sight: Sight;
+      hands: Hands;
       now: () => number;
     },
   ) {}
@@ -82,7 +95,7 @@ export class Mind {
   }
 
   async wake(reason: WakeReason): Promise<void> {
-    const { config, journal, director, actor, voice, paper, sight } = this.deps;
+    const { config, journal, director, actor, voice, paper, sight, hands } = this.deps;
     if (!this.configured) {
       if (!this.warned) console.warn("mind: no model configured (config.json → mind.baseUrl, mind.model)");
       this.warned = true;
@@ -101,6 +114,8 @@ export class Mind {
       actor.feel("curious", 3);
     }
 
+    // He changes their desktop only when they are the one asking.
+    const mayAct = reason.kind === "said";
     const snap = journal.snapshot();
     const user = wakeMessage({
       log: journal.render(80, this.journalMark),
@@ -119,7 +134,9 @@ export class Mind {
       voice,
       paper,
       sight,
+      hands,
       windowIds: snap.ids,
+      mayAct,
       captions: config.voice.captions,
       now: this.deps.now,
     });
@@ -135,10 +152,13 @@ export class Mind {
       performance.push(item);
     });
     const abort = (this.abort = new AbortController());
+    const tools = toolsFor(mayAct);
     const toolbox = new Toolbox({
       sight,
+      hands,
       world: director.world,
       windowIds: snap.ids,
+      mayAct,
       // His eyes go to what he is reading.
       onLook: (hwnd) => {
         const at = director.resolve({ window: hwnd });
@@ -146,7 +166,7 @@ export class Mind {
       },
     });
     const messages: Message[] = [
-      { role: "system", content: personaPrompt({ audioTags: voice.audible && /_v[34]/.test(config.voice.model), tools: !this.toolless, you: config.you, today: new Date(journal.now()) }) },
+      { role: "system", content: personaPrompt({ audioTags: voice.audible && /_v[34]/.test(config.voice.model), tools: !this.toolless, acts: mayAct, you: config.you, today: new Date(journal.now()) }) },
       ...this.turns.flatMap((t): Message[] => [
         { role: "user", content: t.user },
         { role: "assistant", content: t.assistant },
@@ -154,28 +174,55 @@ export class Mind {
       { role: "user", content: user },
     ];
     let raw = "";
+    const record: NonNullable<Mind["last"]> = (this.last = {
+      reason: reason.kind === "said" ? `said: ${reason.text}` : `event: ${reason.why}`,
+      snapshot: snap.text,
+      steps: [],
+      did: performance.did,
+    });
 
     try {
-      for (let looks = 0; ; looks++) {
-        const said = await this.ask(messages, looks < MAX_LOOKS, abort.signal, (text) => {
+      for (let step = 0; ; step++) {
+        const more = step < MAX_STEPS;
+        const said = await this.ask(messages, tools, more, abort.signal, (text) => {
           raw += text;
           parser.feed(text);
         });
-        // Whatever he said before stopping to look is spoken while he looks.
         parser.end();
-        if (!said.calls.length || looks >= MAX_LOOKS) break;
+        // Whatever he said before stopping to look is spoken while he looks. What he finds out
+        // depends on what he has just done, though, so that has to be over first.
+        await performance.changed();
+        const taken: Step = { wrote: said.text, calls: [] };
+        record.steps.push(taken);
+        trace.log("mind", `wrote: ${said.text.replace(/\s+/g, " ")}`);
+        if (abort.signal.aborted) break;
+        const failed = performance.failed;
+        if (failed) taken.failed = `${failed.direction}: ${failed.why}`;
+        if ((!said.calls.length && !failed) || !more) break;
         raw += " ";
-        messages.push({
-          role: "assistant",
-          content: said.text || null,
-          tool_calls: said.calls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.arguments } })),
-        });
-        for (const call of said.calls) messages.push({ role: "tool", tool_call_id: call.id, content: await toolbox.run(call) });
+        performance.recover();
+        const note = failed && `Your ${failed.direction} did not work: ${failed.why}. Nothing you wrote after it was said or done.`;
+        if (said.calls.length) {
+          messages.push({
+            role: "assistant",
+            content: said.text || null,
+            tool_calls: said.calls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.arguments } })),
+          });
+          for (const call of said.calls) {
+            const result = note ? `Not done. ${note}` : await toolbox.run(call);
+            taken.calls.push({ name: call.name, arguments: call.arguments, result });
+            trace.log("mind", `${call.name} ${call.arguments} → ${result.replace(/\s+/g, " ").slice(0, 160)}`);
+            messages.push({ role: "tool", tool_call_id: call.id, content: result });
+          }
+        } else {
+          messages.push({ role: "assistant", content: said.text }, { role: "user", content: `${note} Tell them in a few words, or try another way.` });
+        }
         if (abort.signal.aborted) break;
       }
       await performance.finish();
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
+        record.error = String(err);
         console.error("mind:", err);
         actor.feel("unsure", 2);
       }
@@ -202,27 +249,28 @@ export class Mind {
 
   /**
    * One request to the model. Text is handed to `onText` as it streams; tool
-   * calls are collected and returned. With `mayLook` false he has to answer
+   * calls are collected and returned. With `mayCall` false he has to answer
    * with what he already knows.
    */
-  private async ask(messages: Message[], mayLook: boolean, signal: AbortSignal, onText: (text: string) => void): Promise<{ text: string; calls: ToolCall[] }> {
+  private async ask(messages: Message[], tools: readonly Tool[], mayCall: boolean, signal: AbortSignal, onText: (text: string) => void): Promise<{ text: string; calls: ToolCall[] }> {
     const { config } = this.deps;
-    const body = (tools: boolean) =>
+    const body = (offer: boolean) =>
       JSON.stringify({
         model: config.mind.model,
         temperature: config.mind.temperature,
         stream: true,
-        max_tokens: 700,
+        // Room for some thinking as well: a model that reasons first spends it out of the same allowance.
+        max_tokens: 1400,
         ...(config.mind.reasoningEffort ? { reasoning_effort: config.mind.reasoningEffort } : {}),
-        ...(tools ? { tools: TOOLS, tool_choice: mayLook ? "auto" : "none" } : {}),
+        ...(offer ? { tools, tool_choice: mayCall ? "auto" : "none" } : {}),
         messages,
       });
-    const post = (tools: boolean) =>
+    const post = (offer: boolean) =>
       http(`${config.mind.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${config.mind.apiKey}` },
-        body: body(tools),
+        body: body(offer),
       });
     let res = await post(!this.toolless);
     if (!res.ok && !this.toolless && (res.status === 400 || res.status === 422) && messages.every((m) => m.role !== "tool")) {

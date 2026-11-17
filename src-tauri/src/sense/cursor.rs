@@ -134,7 +134,9 @@ pub fn spawn_cursor_thread(app: AppHandle, state: Arc<SenseState>) -> JoinHandle
                         );
                     }
 
-                    let interactive = if state.hold_interactive.load(Ordering::Relaxed) {
+                    let interactive = if state.pass_through.load(Ordering::Relaxed) {
+                        false
+                    } else if state.hold_interactive.load(Ordering::Relaxed) {
                         true
                     } else if let Ok(regions) = state.hit_regions.read() {
                         regions.iter().any(|r| r.contains(pt.x, pt.y))

@@ -1,12 +1,19 @@
 import type { Seen, Sight } from "../sense/sight";
 import type { World } from "../world/world";
+import type { Hands } from "./hands";
+
+export interface Tool {
+  type: "function";
+  function: { name: string; description: string; parameters: object };
+}
 
 /**
- * What the big model can ask for before it answers. His context holds only
- * window titles; anything more detailed is fetched here, when he wants it,
- * so that a wake stays small.
+ * What the big model can ask for before it answers: things whose result he
+ * needs. His context holds only window titles; anything more detailed is
+ * fetched here, when he wants it, so that a wake stays small. Whatever he
+ * does without needing an answer is a direction in his script instead.
  */
-export const TOOLS = [
+const LOOK: Tool[] = [
   {
     type: "function",
     function: {
@@ -23,7 +30,27 @@ export const TOOLS = [
       },
     },
   },
-] as const;
+];
+
+/** Offered only when they asked him for something: this shows him their words. */
+const ASKED: Tool[] = [
+  {
+    type: "function",
+    function: {
+      name: "read",
+      description: "Read the text in a window: what is visible of the page, document or message it shows. Give an element id instead to read just that field or document.",
+      parameters: {
+        type: "object",
+        properties: { target: { type: "string", description: "A window id such as w2, or an element id such as e12." } },
+        required: ["target"],
+      },
+    },
+  },
+];
+
+export function toolsFor(mayAct: boolean): readonly Tool[] {
+  return mayAct ? [...LOOK, ...ASKED] : LOOK;
+}
 
 export interface ToolCall {
   id: string;
@@ -48,9 +75,12 @@ export class Toolbox {
   constructor(
     private deps: {
       sight: Sight;
+      hands: Hands;
       world: World;
       /** Short window ids from the snapshot the model was given. */
       windowIds: Map<string, number>;
+      /** Whether they asked him for something this time. */
+      mayAct: boolean;
       /** Called when he starts looking into a window. */
       onLook?: (hwnd: number) => void;
     },
@@ -64,7 +94,19 @@ export class Toolbox {
       return "Could not read the arguments.";
     }
     if (call.name === "look") return this.look(String(args.window ?? ""), typeof args.find === "string" ? args.find : "");
-    return `There is no tool called ${call.name}.`;
+    if (call.name === "read" && this.deps.mayAct) return this.read(String(args.target ?? args.window ?? "").trim());
+    return `There is no tool called ${call.name}. The tools are ${this.deps.mayAct ? "look and read" : "look"}; anything else is a direction you write in your script.`;
+  }
+
+  private async read(id: string): Promise<string> {
+    const { sight, hands, windowIds } = this.deps;
+    const seen = sight.get(id);
+    const hwnd = seen?.hwnd ?? windowIds.get(id);
+    if (hwnd == null) return `There is nothing called ${id}. The windows are: ${[...windowIds.keys()].join(", ")}.`;
+    this.deps.onLook?.(hwnd);
+    const text = await hands.read(hwnd, seen ?? undefined);
+    return text ? `The text in ${id}:
+${text}` : `No text can be read in ${id}: this app does not give it out.`;
   }
 
   private async look(id: string, find: string): Promise<string> {

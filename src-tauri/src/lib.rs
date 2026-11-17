@@ -1,3 +1,4 @@
+mod act;
 mod ask;
 mod config;
 mod hear;
@@ -69,6 +70,14 @@ pub fn run() {
         .manage(RuntimeHandles(Mutex::new(None)))
         .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![
+            act::window::window_act,
+            act::window::window_place,
+            act::media::media_act,
+            act::press::element_press,
+            act::press::element_focus,
+            act::press::element_text,
+            act::launch::launch_list,
+            act::launch::launch_open,
             ask::ask_show,
             ask::ask_hide,
             ask::ask_submit,

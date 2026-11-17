@@ -291,6 +291,19 @@ const SCENARIOS: Record<string, Scenario> = {
       at(t, 9, () => void s.director.perform("point", { target: { x: 1010, y: 610 } }));
     },
   },
+  // Pressing something for real: the hand drawn back, the push with his weight behind it, and again with the straw.
+  press: {
+    zoom: 5,
+    frames: [1.6, 1.75, 1.85, 1.9, 1.94, 1.98, 2.1, 2.35, 6.1, 6.18, 6.24, 6.3],
+    script: (s, t, first) => {
+      if (first) {
+        s.director.autonomous = false;
+        s.director.onTouch = (at) => marks.push({ ...at, t: s.world.time });
+        void s.director.perform("press", { target: { x: 1040, y: 715 } });
+      }
+      at(t, 5.6, () => void s.director.perform("press", { target: { x: 1150, y: 640 } }));
+    },
+  },
   // A spot in the middle of a window, with no ledge near it: up the glass, tap, and down again.
   cling: {
     zoom: 2,

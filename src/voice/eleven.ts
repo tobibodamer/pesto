@@ -39,6 +39,7 @@ const SOUNDS: Record<string, { group: Group; level?: number }> = {
   snore: { group: "can" },
   lid: { group: "can" },
   knock: { group: "bumps" },
+  press: { group: "bumps" },
   clap: { group: "bumps" },
   thud: { group: "bumps" },
   land: { group: "bumps" },

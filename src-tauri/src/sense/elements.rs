@@ -1,8 +1,12 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::Accessibility::IUIAutomationElement;
+use windows::Win32::UI::WindowsAndMessaging::IsWindow;
 
 use super::focus::control_kind;
 use super::skeleton::{rect_of, with_uia, Uia};
@@ -14,6 +18,30 @@ pub struct Element {
     pub rect: Rect,
     pub kind: &'static str,
     pub name: String,
+    /// Names this element to `with_element` until its window is scanned again.
+    pub key: u32,
+}
+
+/// UI Automation runs in the multithreaded apartment here, where an element may be used from any thread.
+struct Held(IUIAutomationElement);
+unsafe impl Send for Held {}
+
+/// The elements of each window's latest scan, kept so that he can act on what he saw.
+static HELD: OnceLock<Mutex<HashMap<i64, Vec<(u32, Held)>>>> = OnceLock::new();
+static NEXT_KEY: AtomicU32 = AtomicU32::new(1);
+
+fn held() -> std::sync::MutexGuard<'static, HashMap<i64, Vec<(u32, Held)>>> {
+    HELD.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Runs `f` on an element from the latest scan of its window.
+pub fn with_element<T>(hwnd: i64, key: u32, f: impl FnOnce(&IUIAutomationElement) -> Result<T, String>) -> Result<T, String> {
+    let element = held()
+        .get(&hwnd)
+        .and_then(|all| all.iter().find(|(k, _)| *k == key))
+        .map(|(_, e)| e.0.clone())
+        .ok_or("it is not there any more")?;
+    with_uia(|_| Ok(f(&element)))?
 }
 
 /// A web page can hold tens of thousands of nodes; the scan goes breadth first, so the app's own
@@ -66,6 +94,15 @@ fn clip(r: Rect, to: Rect) -> Option<Rect> {
 }
 
 fn scan(uia: &Uia, hwnd: i64) -> windows::core::Result<Vec<Element>> {
+    let mut kept = Vec::new();
+    let found = walk(uia, hwnd, &mut kept);
+    let mut all = held();
+    all.retain(|&h, _| unsafe { IsWindow(HWND(h as isize as *mut _)) }.as_bool());
+    all.insert(hwnd, kept);
+    found
+}
+
+fn walk(uia: &Uia, hwnd: i64, kept: &mut Vec<(u32, Held)>) -> windows::core::Result<Vec<Element>> {
     let started = Instant::now();
     let root = unsafe { uia.automation.ElementFromHandleBuildCache(HWND(hwnd as isize as *mut _), &uia.named) }?;
     let Some(bounds) = rect_of(&root) else {
@@ -99,7 +136,9 @@ fn scan(uia: &Uia, hwnd: i64) -> windows::core::Result<Vec<Element>> {
                     .take(NAME_LIMIT)
                     .collect();
                 if !name.is_empty() || speaks_for_itself(kind) {
-                    found.push(Element { rect: r, kind: control_kind(kind), name });
+                    let key = NEXT_KEY.fetch_add(1, Ordering::Relaxed);
+                    kept.push((key, Held(e.clone())));
+                    found.push(Element { rect: r, kind: control_kind(kind), name, key });
                 }
             }
             // A wrapper with no size of its own can still hold visible things; one that is scrolled away cannot.
@@ -115,9 +154,13 @@ fn scan(uia: &Uia, hwnd: i64) -> windows::core::Result<Vec<Element>> {
 
 /// The named controls and texts visible in one window, in screen pixels, the app's own chrome first.
 /// Bounded in node count and time, so it is safe on any window.
+pub fn elements(hwnd: i64) -> Result<Vec<Element>, String> {
+    with_uia(|uia| scan(uia, hwnd))
+}
+
 #[tauri::command]
 pub async fn window_elements(hwnd: i64) -> Result<Vec<Element>, String> {
-    tauri::async_runtime::spawn_blocking(move || with_uia(|uia| scan(uia, hwnd)))
+    tauri::async_runtime::spawn_blocking(move || elements(hwnd))
         .await
         .map_err(|e| e.to_string())?
 }

@@ -25,7 +25,11 @@ In order. Each step leaves the app in a runnable state.
 - Triton serves the decision model with about 500 tokens of context per request, so the decider sees only a few journal lines. Raising `OLLAMA_CONTEXT_LENGTH` (or lowering `OLLAMA_NUM_PARALLEL`) on Triton would let it see more.
 - The ElevenLabs plan allows three requests at once and no PCM output; lines are fetched as MP3, two at a time.
 - Window titles go to the talking model as they are, including anything private in them. There is no filter yet. The same goes for the names of buttons, tabs and on-screen text in a window he looks into: chat names, file names.
-- The model sometimes invents directions and targets; they are skipped, with a line in the debug trace.
+- The model sometimes invents directions and targets; they are skipped, with a line in the debug trace. An action aimed at something that is not there is not skipped: it fails and he is told.
+- With `read`, the text of a page or document goes to the talking model too, when they ask him something that needs it.
+- The model is a flash one and not steady with the action directions. `node dev/ask.mjs --times 4 "close the explorer window"` shows what it writes, without the app. On six requests four times each it now writes the right action every time, with a needless look in about one in six; before the directions were grouped by what they act on and given three examples, it wrote `<press at="w3"/>` for "close" three times in four.
+- He acts on what he is told without asking back. The hovering paw before "Delete" or "Send" is not built.
+- The press sound in `public/sfx/press.mp3` is unheard; three takes wait on the rating page.
 - The generated sounds in `public/sfx` have not been listened to.
 
 ## Architecture
@@ -45,6 +49,7 @@ In order. Each step leaves the app in a runnable state.
 | Mind: streaming OpenAI-compatible chat that writes a performance script | `src/brain/mind.ts`, `persona.ts` | ✅ |
 | Performance script: speech and `<direction/>` tags interleaved on a voice track and a body track | `src/brain/script.ts`, `performance.ts` | ✅ live and tested |
 | Sight: what is inside a window, fetched only when the model asks, so a wake carries titles and nothing more | `src-tauri/src/sense/elements.rs`, `src/sense/sight.ts`, `src/brain/tools.ts` | 🟡 |
+| Hands: what he does to the desktop. Pressing what he saw, working windows and whatever is playing, opening things, reading text | `src/brain/hands.ts`, `src-tauri/src/act/` | 🟡 each command checked on its own (see Agent work); not yet watched from his name to the press in the app |
 | Voice: ElevenLabs speech, binaural renderer on measured KU100 responses, generated sounds, silent captions fallback | `src/voice/`, `public/hrir`, `public/sfx` | 🟡 works, not yet tuned by ear |
 | Config file and tray menu (Settings, Quit) | `src-tauri/src/config.rs`, `src/config.ts` | 🟡 |
 | Dev harness: pose sheets and film strips via headless Edge, studio page | `dev/` | ✅ |
@@ -59,6 +64,9 @@ In order. Each step leaves the app in a runnable state.
 - **Three tiers of behaviour.** Reflexes are code (blink, gaze, startle, riding, being grabbed). Silent reactions are chosen by the small decision model on Triton from a fixed catalog, a few times a minute at most. Only speech and plans go to the big model.
 - **The big model is not prompted per event.** The journal collects everything; it is handed over whole when he is spoken to or when the decider says it is worth speaking.
 - **The model answers in a performance script,** not tool calls: plain text is speech, tags are stage directions, so speech and movement stream together and he can act mid-sentence.
+- **Doing is a direction, finding out is a tool.** `<press at="e12"/>`, `<close at="w2"/>`, `<open what="Downloads"/>` and the like are written into the script like any movement, so he acts mid-sentence and no extra request is spent. The only tools are `look` and `read`. A tool waits until the actions written before it are done, so a look after a press sees what the press opened. `open` was a tool at first; the model then kept writing it as a direction, and kept reaching for `tap` or a look where an action was meant, so now everything he does is one kind of thing.
+- **A failed action costs a request, a working one does not.** Words after an action wait until it is done. If it fails, the rest of the script is dropped, he pulls a face, and the model is asked once more with what went wrong.
+- **He changes their desktop only when they asked.** The action directions and the `read` tool are in his prompt only on a wake that came from them speaking or typing, and the player refuses them on any other.
 - **Windows APIs first.** ActivityWatch is an optional extra source, not a dependency.
 
 ## Senses
@@ -181,9 +189,14 @@ In order. Each step leaves the app in a runnable state.
 
 | Behaviour | State |
 |---|---|
-| Tool use for the mind | 🟡 the loop is there (`src/brain/tools.ts`, `Mind.ask`): he may stop up to three times a wake to call a tool, and what he said before is spoken while it runs. One tool so far, `look`, which lists what is inside a window. Files, shell and web ⬜ |
+| Tool use for the mind | 🟡 the loop is there (`src/brain/tools.ts`, `Mind.ask`): up to eight steps a wake, a step being a tool call or a fresh start after an action that failed. What he said before is spoken while a tool runs. `look` lists what is inside a window, `read` gives the text in a window or a field. `pesto.mind.last` holds the last wake in full: what he was shown, what the model wrote at each step, every tool call with its answer, and what failed. Shell ⬜ |
 | "This one": resolve what the cursor is hovering | ⬜ |
-| Clicking by walking up and pressing, a real simulated click | ⬜ |
+| Clicking by walking up and pressing | 🟡 `<press at="e12"/>`. He goes there, draws his hand back and pushes (the straw when it is out of reach, a paper ball when he cannot get near), and as it lands the element is worked through UI Automation: invoked, toggled, selected or expanded, without the mouse. Apps that say where a thing is but not how to work it get a real click, with the cursor put back 30 ms later and refused while a mouse button is held. Checked on Character Map with `cargo test --lib press -- --ignored`: a checkbox both ways and a button. The move is in `film:press`. Not yet seen in the app; the move is a plain first version for the design session to polish |
+| Putting the cursor in a field | 🟡 `<focus at="e12"/>`. No typing yet |
+| Working windows | 🟡 `<focus>`, `<minimize>`, `<maximize>`, `<restore>`, `<close>` and `<move at="w2" to="…"/>` (halves, corners, center, full, another screen, or a screen and a place). He pokes the caption button first, or the title bar. Close sends the ordinary close message, so apps still ask about unsaved work. Minimised windows are now in his snapshot with ids, so he can bring them back. Checked on Character Map with `cargo test --lib window -- --ignored`, the placement sums in `src/brain/hands.test.ts`; Windows did let him take the foreground |
+| Working what is playing | 🟡 `<play/>`, `<pause/>`, `<next/>`, `<previous/>` through the system media controls. Never run |
+| Opening things | 🟡 `<open what="…"/>`. Apps and their folders by name, matched in code against the 500-odd entries of the Apps folder, so his prompt never holds the list; when several fit or none does, the direction fails and he is told the closest names. A window id opens nothing and brings that window forward. Programs and scripts by path are refused, and an app only opens if the listing gave it out. The listing and the refusals are tested; nothing has been opened with it yet |
+| Reading text | 🟡 the `read` tool: what is visible of the largest document in a window, or one field. Checked on a field only |
 | Two-handed press for big buttons | ⬜ |
 | Washing files in a tub | ⬜ |
 | Background task in the can with clanking, result dragged to the cursor | ⬜ |
@@ -325,7 +338,7 @@ When a video or game takes the whole screen he is no longer on the desktop in fr
 |---|---|
 | `vite build` inputs (overlay and ask box) | 🟡 fixed, build not run |
 | Privacy filter for window titles before they reach the model | ⬜ |
-| Tests for the script parser and the performance player | ✅ `pnpm test` (Vitest), in `src/brain/*.test.ts` next to what they test. The player runs against a voice and a director that start and finish only when the test says so |
+| Tests for the script parser, the performance player and the hands | ✅ `pnpm test` (Vitest), in `src/brain/*.test.ts` next to what they test. The player runs against a voice, a director and hands that start, finish and fail only when the test says so |
 | `CLAUDE.md` for agents working in the repo | ⬜ |
 | Right-click menu on him or the can: Talk, Go home / Come out, Voice, Volume, Width, Sounds, Ears, Captions, Reactions, Sticker border, Debug, Settings, Quit. Switches are saved to config.json | ✅ |
 | Sounds apart from the voice: their own switch and volume, playing without a voice provider, plus a volume for each group (reactions, breathing, can, bumps) in Settings → Sounds. Groups are set in `SOUNDS` in `src/voice/eleven.ts` | 🟡 not tried in the app |
@@ -349,8 +362,11 @@ node dev/shoot.mjs emotions film:emerge    pose sheets and film strips into dev/
 node dev/shoot.mjs film:groom film:lounge film:rim film:junk    the idle moves
 node dev/shoot.mjs film:tap film:cling film:throw               pointing things out; a cross marks each spot he touched
 node dev/shoot.mjs film:dash@1800x1680 film:bound@1800x1920     getting there in a hurry, frame by frame
+node dev/shoot.mjs film:press                                   the push, with his hand and with the straw
+node dev/ask.mjs "maximize this window"      what the big model writes for that, on a made-up desktop; nothing is done
 pnpm typecheck
-pnpm test                                  the script parser and the performance player
+pnpm test                                  the script parser, the performance player and the hands
+cargo test --lib act -- --ignored --nocapture --test-threads=1    in src-tauri: presses, moves and closes a Character Map window it opens itself
 ```
 
-`PESTO_SENSE_LOG=1` prints sense event counts. Through poke or the overlay's devtools, `pesto.say("…")` talks to him, `pesto.director.perform("dance")` plays a reaction, `pesto.director.perform("tap", { target: "cursor" })` (or `"throw"`, `"point"`) shows a spot, `pesto.sight.look(pesto.world.foreground)` lists what he can see in a window, `pesto.decider.last` shows the last silent decision. Debug in his menu (`debug.panel`) draws a live trace in the corner of his screen: every request to the decision model with its time and likeliest answers, what his ears heard, why he did or did not react while listening, and the route of each dash. The same lines go to the console and `pesto.trace.lines`.
+`PESTO_SENSE_LOG=1` prints sense event counts. Through poke or the overlay's devtools, `pesto.say("…")` talks to him, `pesto.director.perform("dance")` plays a reaction, `pesto.director.perform("tap", { target: "cursor" })` (or `"throw"`, `"point"`) shows a spot, `pesto.sight.look(pesto.world.foreground)` lists what he can see in a window, `pesto.hands.move(pesto.world.foreground, "left")` works a window without the model, `pesto.decider.last` shows the last silent decision, `pesto.mind.last` the last time he woke: what the model wrote, called and failed at. Debug in his menu (`debug.panel`) draws a live trace in the corner of his screen: every request to the decision model with its time and likeliest answers, what his ears heard, why he did or did not react while listening, and the route of each dash. The same lines go to the console and `pesto.trace.lines`.

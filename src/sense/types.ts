@@ -165,7 +165,34 @@ export interface SenseCommands {
   overlay_hold_interactive(args: { hold: boolean }): void;
   /** The big structural parts of a window (toolbars, tab strips, panes), from a scan bounded to about 150 ms. */
   window_skeleton(args: { hwnd: number }): (Rect & { kind: string })[];
-  /** The named controls and texts visible in a window, its own bars and buttons first, from a scan bounded to about 700 ms. */
-  window_elements(args: { hwnd: number }): (Rect & { kind: string; name: string })[];
+  /**
+   * The named controls and texts visible in a window, its own bars and buttons first, from a scan bounded to about 700 ms.
+   * `key` names the element to the `element_*` commands until the window is scanned again.
+   */
+  window_elements(args: { hwnd: number }): (Rect & { kind: string; name: string; key: number })[];
+  /** Works an element the way a click would, without the mouse where the app allows it. Resolves to how: "pressed", "toggled", "selected", "opened", "closed" or "clicked". */
+  element_press(args: { hwnd: number; key: number }): string;
+  /** Brings the element's window forward and gives the element the keyboard focus. */
+  element_focus(args: { hwnd: number; key: number }): void;
+  /** The text an element holds: what is visible of a document, or the value of a field. At most `limit` characters. */
+  element_text(args: { hwnd: number; key: number; limit: number }): string;
+  window_act(args: { hwnd: number; verb: WindowVerb }): void;
+  /** Moves and sizes a window so that its visible frame is `rect`, restoring it first if it is minimised or maximised. */
+  window_place(args: { hwnd: number; rect: Rect }): void;
+  /** Works whatever is playing through the system media controls. */
+  media_act(args: { verb: MediaVerb }): void;
+  /** Everything that can be opened by name: installed apps and the person's own folders. */
+  launch_list(): Openable[];
+  /** Opens a web address, an app from `launch_list`, or a file or folder by its full path. Programs and scripts are refused. */
+  launch_open(args: { target: string }): void;
   app_quit(): void;
+}
+
+export type WindowVerb = "focus" | "minimize" | "maximize" | "restore" | "close";
+export type MediaVerb = "play" | "pause" | "next" | "previous";
+
+export interface Openable {
+  name: string;
+  /** What `launch_open` takes. */
+  target: string;
 }

@@ -199,8 +199,9 @@ export class Journal {
   }
 
   /**
-   * A description of the desktop as it is right now. Windows get short ids
-   * (w1, w2, …) that a model can use as targets; `ids` maps them back.
+   * A description of the desktop as it is right now. Every window gets a short
+   * id (w1, w2, …) that a model can use as a target, since he can only work a
+   * window he can name; `ids` maps them back.
    */
   snapshot(): { text: string; ids: Map<string, number> } {
     const w = this.world;
@@ -212,15 +213,20 @@ export class Journal {
     for (const m of w.monitors) {
       const here = w.windows.filter((x) => x.monitor === m.id && x.state !== "minimized");
       lines.push(`Screen ${m.id + 1}${m.primary ? " (main)" : ""}, ${m.rect.w}×${m.rect.h}:${here.length ? "" : " empty desktop"}`);
-      for (const x of here.slice(0, 6)) {
+      for (const x of here) {
         const id = `w${++n}`;
         ids.set(id, x.hwnd);
         const marks = [x.hwnd === w.foreground ? "focused" : "", x.state !== "normal" ? x.state : ""].filter(Boolean).join(", ");
         lines.push(`  ${id} ${app(x)} «${clip(x.title, 70)}»${marks ? ` [${marks}]` : ""}`);
       }
     }
-    const min = w.windows.filter((x) => x.state === "minimized").length;
-    if (min) lines.push(`${min} more window${min > 1 ? "s" : ""} minimised.`);
+    const hidden = w.windows.filter((x) => x.state === "minimized");
+    if (hidden.length) lines.push("Minimised:");
+    for (const x of hidden) {
+      const id = `w${++n}`;
+      ids.set(id, x.hwnd);
+      lines.push(`  ${id} ${app(x)} «${clip(x.title, 70)}»`);
+    }
     const mon = w.monitorAt(w.cursor.x, w.cursor.y);
     if (mon) lines.push(`Cursor is on screen ${mon.id + 1}.`);
     const playing = w.media.sessions.find((s) => s.status === "playing");

@@ -13,7 +13,7 @@ use windows::Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTIT
 use super::types::{MediaEvent, MediaSession, PlaybackStatus};
 use super::{emit_event, SenseState};
 
-struct WinRtGuard(bool);
+pub(crate) struct WinRtGuard(bool);
 impl Drop for WinRtGuard {
     fn drop(&mut self) {
         if self.0 {
@@ -22,7 +22,7 @@ impl Drop for WinRtGuard {
     }
 }
 
-fn init_winrt() -> Result<WinRtGuard, windows::core::Error> {
+pub(crate) fn init_winrt() -> Result<WinRtGuard, windows::core::Error> {
     match unsafe { RoInitialize(RO_INIT_MULTITHREADED) } {
         Ok(()) => Ok(WinRtGuard(true)),
         Err(e) if e.code() == RPC_E_CHANGED_MODE => Ok(WinRtGuard(false)),

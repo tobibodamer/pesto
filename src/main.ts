@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Decider } from "./brain/decider";
+import { Hands } from "./brain/hands";
 import { Journal } from "./brain/journal";
 import { Mind } from "./brain/mind";
 import { DebugPanel } from "./debug/panel";
@@ -32,7 +33,8 @@ const now = () => world.time;
 const voice = new ElevenVoice(config, () => world.primary?.rect ?? null);
 const journal = new Journal(world, actor);
 const sight = new Sight(world);
-const mind = new Mind({ config, journal, director, actor, voice, paper, sight, now });
+const hands = new Hands(world, sight);
+const mind = new Mind({ config, journal, director, actor, voice, paper, sight, hands, now });
 const decider = new Decider({ config, world, journal, director, actor, mind, now });
 const ears = new Ears({ config, director, actor, journal, mind, decider, paper, now });
 await ears.connect();
@@ -143,5 +145,5 @@ requestAnimationFrame(frame);
 //   pesto.decider.last                the last silent decision and why
 //   pesto.trace.lines                 what his ears and the decision model did, while Debug is on
 Object.assign(window, {
-  pesto: { stage, world, actor, director, journal, mind, decider, ears, sight, config, trace, say: (text: string) => mind.wake({ kind: "said", text }) },
+  pesto: { stage, world, actor, director, journal, mind, decider, ears, sight, hands, config, trace, say: (text: string) => mind.wake({ kind: "said", text }) },
 });

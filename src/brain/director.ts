@@ -18,6 +18,8 @@ export interface ReactionArgs {
   text?: string;
   seconds?: number;
   emotion?: Emotion;
+  /** For `press`: called at the moment his hand, his straw or his paper ball lands on the target. */
+  act?: () => void;
 }
 
 interface Reaction {
@@ -241,6 +243,20 @@ export const REACTIONS = {
       yield* show.indicate(d.actor, () => d.resolve(args.target), { taps: 2, hold: args.seconds ?? 1, onTouch: (at) => d.onTouch?.(at) });
     },
   },
+  press: {
+    describe: "Go right up to the target and push it once with his hand, or with his straw when it is just out of reach, so that it is really pressed. Where he cannot get near, a paper ball does it.",
+    run: function* (d, args) {
+      const p = d.resolve(args.target);
+      if (!p) return;
+      yield* d.reach(p.x, p.y);
+      const landed = (at: { x: number; y: number }) => {
+        d.onTouch?.(at);
+        args.act?.();
+      };
+      if (show.within(d.actor, p.x, p.y)) yield* show.indicate(d.actor, () => d.resolve(args.target), { press: true, hold: args.seconds ?? 0.5, onTouch: landed });
+      else yield* show.throwBall(d.actor, d.litter, p.x, p.y, () => args.act?.());
+    },
+  },
   throw: {
     describe: "Throw a crumpled paper ball that bounces off the glass exactly at the target, from where he stands. Precise at any distance, and cheeky.",
     run: function* (d, args) {
@@ -280,10 +296,10 @@ export const REACTION_NAMES = Object.keys(REACTIONS) as ReactionName[];
 
 /** Reactions that only make sense once he is out of the can. */
 const NEEDS_BODY = new Set<ReactionName>([
-  "wander", "approach", "sit", "lounge", "groom", "point", "tap", "throw", "knock", "sign", "wave", "shrug", "nod", "ponder", "clap", "flop", "dance", "startle", "swat", "yawn", "sniff",
+  "wander", "approach", "sit", "lounge", "groom", "point", "tap", "press", "throw", "knock", "sign", "wave", "shrug", "nod", "ponder", "clap", "flop", "dance", "startle", "swat", "yawn", "sniff",
 ]);
 /** Reactions he can do while clinging to the glass, without coming down first. */
-const FROM_GLASS = new Set<ReactionName>(["approach", "point", "tap"]);
+const FROM_GLASS = new Set<ReactionName>(["approach", "point", "tap", "press"]);
 
 /**
  * Decides what Pesto does with himself. On its own it only runs his idle

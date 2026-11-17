@@ -23,6 +23,7 @@ const SOUNDS = {
   dizzy: [1.4, "a small dazed raccoon making a wobbly woozy groan, cartoonish, close, dry"],
   squeak: [1.2, "rubbery paws squeaking as they slide slowly down a pane of glass, one continuous descending squeak"],
   knock: [0.7, "two quick light knuckle knocks on a thick glass window, close, dry"],
+  press: [0.5, "a small soft paw pushing one plastic button firmly, a single short dull click with a soft pad thump, close, dry, no background"],
   clap: [1.6, "one very small creature clapping tiny soft paws, six quick little claps, close, dry"],
   swat: [0.5, "a small soft furry paw swiping quickly through the air, a faint short natural whoosh like a cloth flicked once, no synthesizer, no laser, dry, no background"],
   land: [0.5, "four small soft paws landing lightly on a wooden shelf, a quiet pat, dry"],

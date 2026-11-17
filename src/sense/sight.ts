@@ -11,6 +11,8 @@ export interface Seen {
   name: string;
   /** Relative to the window's top-left corner, so it rides along when the window moves. */
   rect: Rect;
+  /** What the `element_*` commands know it by. Good until its window is looked into again. */
+  key: number;
 }
 
 interface Glance {
@@ -52,9 +54,15 @@ export class Sight {
     const found = await call("window_elements", { hwnd }).catch(() => []);
     // The window may have moved while it was being read; the scan is in screen pixels.
     const now = w.window(hwnd) ?? win;
-    const items = found.map((e) => this.remember(hwnd, e.kind, e.name, { x: e.x - now.rect.x, y: e.y - now.rect.y, w: e.w, h: e.h }));
+    const items = found.map((e) => this.remember(hwnd, e.kind, e.name, { x: e.x - now.rect.x, y: e.y - now.rect.y, w: e.w, h: e.h }, e.key));
     this.glances.set(hwnd, { hwnd, at: w.time, w: now.rect.w, h: now.rect.h, items });
     return items;
+  }
+
+  /** Call when something has changed what a window shows: the next look reads it afresh. */
+  stale(hwnd: number) {
+    const glance = this.glances.get(hwnd);
+    if (glance) glance.at = -Infinity;
   }
 
   get(id: string): Seen | null {
@@ -76,19 +84,19 @@ export class Sight {
   }
 
   /** The same thing seen again keeps its id. */
-  private remember(hwnd: number, kind: string, name: string, rect: Rect): Seen {
-    const key = `${hwnd}|${kind}|${name}|${rect.x},${rect.y}`;
-    let id = this.ids.get(key);
+  private remember(hwnd: number, kind: string, name: string, rect: Rect, key: number): Seen {
+    const same = `${hwnd}|${kind}|${name}|${rect.x},${rect.y}`;
+    let id = this.ids.get(same);
     if (!id) {
       id = `e${++this.count}`;
-      this.ids.set(key, id);
+      this.ids.set(same, id);
       if (this.ids.size > REMEMBER) {
         const [oldKey, oldId] = this.ids.entries().next().value!;
         this.ids.delete(oldKey);
         this.byId.delete(oldId);
       }
     }
-    const seen = { id, hwnd, kind, name, rect };
+    const seen = { id, hwnd, kind, name, rect, key };
     this.byId.set(id, seen);
     return seen;
   }

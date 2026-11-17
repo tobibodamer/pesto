@@ -69,6 +69,8 @@ pub struct SenseState {
     pub snapshot: RwLock<SenseSnapshot>,
     pub hit_regions: RwLock<Vec<Rect>>,
     pub hold_interactive: AtomicBool,
+    /// While set the overlay lets every click through, so that a click he makes lands on what is under him.
+    pub pass_through: AtomicBool,
     pub shutdown: AtomicBool,
     shutdown_mu: Mutex<bool>,
     shutdown_cv: Condvar,
@@ -119,6 +121,7 @@ impl SenseState {
             snapshot: RwLock::new(snapshot),
             hit_regions: RwLock::new(Vec::new()),
             hold_interactive: AtomicBool::new(false),
+            pass_through: AtomicBool::new(false),
             shutdown: AtomicBool::new(false),
             shutdown_mu: Mutex::new(false),
             shutdown_cv: Condvar::new(),
