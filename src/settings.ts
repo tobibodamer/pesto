@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { absorb, DEFAULTS, loadConfig, saveConfig, type Config } from "./config";
+import { absorb, DEFAULTS, loadConfig, MIND_DEFAULTS, saveConfig, type Config } from "./config";
 
 type Path = string;
 
@@ -10,6 +10,8 @@ interface Base {
   hint?: string;
   /** Greyed out while this is false, but still editable. */
   when?: (c: Config) => boolean;
+  /** Left out entirely while this is false. */
+  only?: (c: Config) => boolean;
 }
 /** Settings that belong together, folded away under one row until opened. */
 type Group = Base & { kind: "group"; id: string; fields: Leaf[]; summary?: (c: Config) => string };
@@ -17,9 +19,16 @@ type Field = Leaf | Group;
 type Leaf = Base &
   (
     | { kind: "switch"; key: Path; invert?: boolean }
-    | { kind: "text"; key: Path; placeholder?: string; secret?: boolean; suggest?: string[]; /** Makes it a box of this many lines. */ lines?: number }
+    | { kind: "text"; key: Path; placeholder?: string | ((c: Config) => string); secret?: boolean; suggest?: string[]; /** Makes it a box of this many lines. */ lines?: number }
     | { kind: "date"; key: Path }
-    | { kind: "select"; key: Path; options: [value: string, label: string][] }
+    | {
+        kind: "select";
+        key: Path;
+        options: [value: string, label: string][];
+        /** Emptied when the choice changes, for settings that mean something else under the new one. */
+        resets?: Path[];
+      }
+    | { kind: "link"; href: string; text: string }
     | { kind: "number"; key: Path; min: number; max: number; unit: string }
     | {
         kind: "slider";
@@ -50,6 +59,7 @@ const percent = (v: number) => `${Math.round(v * 100)}%`;
 const usesVoice = (c: Config) => c.voice.provider === "elevenlabs";
 const transcribes = (c: Config) => c.hear.provider === "elevenlabs";
 const replies = (c: Config) => c.hear.followUp > 0;
+const gemini = (c: Config) => c.mind.provider === "gemini";
 
 const SECTIONS: Section[] = [
   {
@@ -84,9 +94,20 @@ const SECTIONS: Section[] = [
     about: "The model he thinks and talks with.",
     title: "Mind",
     fields: [
-      { kind: "text", key: "mind.baseUrl", label: "Endpoint", hint: "Any OpenAI-compatible API.", placeholder: "https://api.openai.com/v1" },
+      {
+        kind: "select",
+        key: "mind.provider",
+        label: "Provider",
+        options: [
+          ["openai", "OpenAI-compatible"],
+          ["gemini", "Gemini"],
+        ],
+        resets: ["mind.baseUrl", "mind.model"],
+      },
+      { kind: "text", key: "mind.baseUrl", label: "Endpoint", placeholder: "https://api.openai.com/v1", only: (c) => !gemini(c) },
       { kind: "text", key: "mind.apiKey", label: "API key", secret: true },
-      { kind: "text", key: "mind.model", label: "Model" },
+      { kind: "link", label: "Free key", href: "https://aistudio.google.com/apikey", text: "Google AI Studio", only: gemini },
+      { kind: "text", key: "mind.model", label: "Model", placeholder: (c) => MIND_DEFAULTS[c.mind.provider]?.model ?? "" },
       { kind: "slider", key: "mind.temperature", label: "Temperature", hint: "Higher makes him more surprising, lower more predictable.", min: 0, max: 2, step: 0.05, show: (v) => v.toFixed(2) },
       {
         kind: "select",
@@ -292,7 +313,7 @@ function control(field: Leaf, id: string): HTMLElement {
     case "text": {
       const input = field.lines
         ? el("textarea", { id, rows: field.lines, maxLength: 800, placeholder: field.placeholder ?? "", spellcheck: false })
-        : el("input", { type: field.secret ? "password" : "text", id, placeholder: field.placeholder ?? "", spellcheck: false, autocomplete: "off" });
+        : el("input", { type: field.secret ? "password" : "text", id, spellcheck: false, autocomplete: "off" });
       const box = el("div", { className: "control" }, input);
       if (field.suggest) {
         const list = el("datalist", { id: `${id}-list` }, ...field.suggest.map((v) => el("option", { value: v })));
@@ -312,6 +333,7 @@ function control(field: Leaf, id: string): HTMLElement {
       });
       input.addEventListener("change", commit);
       syncs.push(() => {
+        input.placeholder = typeof field.placeholder === "function" ? field.placeholder(config) : (field.placeholder ?? "");
         if (document.activeElement !== input) input.value = String(read(field.key));
       });
       return box;
@@ -326,7 +348,11 @@ function control(field: Leaf, id: string): HTMLElement {
     }
     case "select": {
       const select = el("select", { id }, ...field.options.map(([value, label]) => el("option", { value }, label)));
-      select.addEventListener("change", () => write(field.key, select.value));
+      select.addEventListener("change", () => {
+        const value = select.value;
+        for (const key of field.resets ?? []) write(key, "");
+        write(field.key, value);
+      });
       syncs.push(() => (select.value = String(read(field.key))));
       return el("div", { className: "control" }, select);
     }
@@ -354,6 +380,14 @@ function control(field: Leaf, id: string): HTMLElement {
         show();
       });
       return el("div", { className: "control" }, input, out);
+    }
+    case "link": {
+      const link = el("a", { id, href: field.href, textContent: field.text });
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        void invoke("launch_open", { target: field.href });
+      });
+      return el("div", { className: "control" }, link);
     }
     case "hotkey":
       return hotkey(id);
@@ -474,7 +508,10 @@ function row(field: Leaf, enabled: () => boolean): HTMLElement {
     label.append(el("p", { className: "hint", id: `${id}-hint` }, field.hint));
     node.querySelector(`#${id}`)?.setAttribute("aria-describedby", `${id}-hint`);
   }
-  syncs.push(() => node.classList.toggle("idle", !enabled() || (field.when ? !field.when(config) : false)));
+  syncs.push(() => {
+    node.hidden = field.only ? !field.only(config) : false;
+    node.classList.toggle("idle", !enabled() || (field.when ? !field.when(config) : false));
+  });
   return node;
 }
 

@@ -47,6 +47,7 @@ In order. Each step leaves the app in a runnable state.
 | Journal: debounced activity log and desktop snapshot for the model | `src/brain/journal.ts` | ✅ |
 | Decider: small local model picks silent reactions and when to wake the mind | `src/brain/decider.ts` | ✅ decisions live; the pestering ladder is untested |
 | Mind: streaming OpenAI-compatible chat that writes a performance script | `src/brain/mind.ts`, `persona.ts` | ✅ |
+| Mind providers: OpenAI-compatible, or Gemini on Google's native streaming API with tools and thinking levels (free tier) | `src/brain/providers/` | ✅ unit tested |
 | Performance script: speech and `<direction/>` tags interleaved on a voice track and a body track | `src/brain/script.ts`, `performance.ts` | ✅ live and tested |
 | Sight: what is inside a window, fetched only when the model asks, so a wake carries titles and nothing more | `src-tauri/src/sense/elements.rs`, `src/sense/sight.ts`, `src/brain/tools.ts` | 🟡 |
 | Hands: what he does to the desktop. Pressing what he saw, working windows and whatever is playing, opening things, reading text | `src/brain/hands.ts`, `src-tauri/src/act/` | 🟡 each command checked on its own (see Agent work); not yet watched from his name to the press in the app |

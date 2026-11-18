@@ -101,6 +101,17 @@
         border-top: 2px solid var(--rule);
         transition: opacity 0.15s;
       }
+      .control a {
+        color: var(--ink);
+        font-weight: 600;
+        text-underline-offset: 3px;
+      }
+      .control a:hover {
+        text-decoration-thickness: 2px;
+      }
+      .row[hidden] {
+        display: none;
+      }
       .row.idle {
         opacity: 0.45;
       }

@@ -32,7 +32,7 @@ Settings live in `%APPDATA%\dev.pesto.app\config.json`. Every key is optional; m
 
 | Section | What it sets |
 |---|---|
-| `mind` | The model that speaks and plans. Any OpenAI-compatible chat endpoint: `baseUrl`, `apiKey`, `model`. |
+| `mind` | The model that speaks and plans. `provider` is `openai` (any OpenAI-compatible chat endpoint, the default) or `gemini` (Google's Gemini API, free tier with a key from [AI Studio](https://aistudio.google.com/apikey)). `baseUrl`, `apiKey`, `model`; for Gemini an empty `baseUrl` or `model` means `https://generativelanguage.googleapis.com/v1beta` and `gemini-3.6-flash`. |
 | `decider` | A small local model (Ollama) that picks his silent reactions and decides when he should speak up. |
 | `voice` | ElevenLabs text to speech: `apiKey`, `voiceId`. Without it he answers in speech bubbles. |
 | `hear` | Microphone, wake word and ElevenLabs Scribe speech to text. |

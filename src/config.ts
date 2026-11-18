@@ -18,10 +18,14 @@ export interface Config {
     /** Anything else he should know, in their own words. */
     notes: string;
   };
-  /** The big model that speaks and plans. Any OpenAI-compatible chat endpoint. */
+  /** The big model that speaks and plans. */
   mind: {
+    /** "openai" is any OpenAI-compatible chat endpoint. */
+    provider: "openai" | "gemini";
+    /** Empty uses the provider's own. */
     baseUrl: string;
     apiKey: string;
+    /** Empty uses the provider's default. */
     model: string;
     temperature: number;
     /** How long the model may think before answering. Empty leaves the provider's default. */
@@ -124,7 +128,7 @@ export interface Config {
 
 export const DEFAULTS: Config = {
   you: { name: "", occupation: "", birthday: "", language: "", notes: "" },
-  mind: { baseUrl: "", apiKey: "", model: "", temperature: 0.9, reasoningEffort: "low", quietSeconds: 240 },
+  mind: { provider: "openai", baseUrl: "", apiKey: "", model: "", temperature: 0.9, reasoningEffort: "low", quietSeconds: 240 },
   decider: { enabled: true, baseUrl: "http://triton:11434", model: "d1:2b-q8_0", speakAbove: 0.72 },
   voice: { provider: "none", apiKey: "", voiceId: "", model: "eleven_v4_turbo", stability: 0.35, volume: 0.9, captions: false, muted: false, width: 0.3 },
   sfx: { enabled: true, volume: 0.9, reactions: 1, breathing: 1, can: 1, bumps: 1 },
@@ -133,6 +137,18 @@ export const DEFAULTS: Config = {
   debug: { panel: false },
   body: { scale: 0.8, can: 1, border: 0 },
 };
+
+/** What an empty `mind.baseUrl` or `mind.model` means for each provider. */
+export const MIND_DEFAULTS: Record<Config["mind"]["provider"], { baseUrl: string; model: string }> = {
+  openai: { baseUrl: "", model: "" },
+  gemini: { baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-3.6-flash" },
+};
+
+/** `config.mind` with the provider's defaults filled in. */
+export function mindSettings(mind: Config["mind"]): Config["mind"] {
+  const defaults = MIND_DEFAULTS[mind.provider] ?? MIND_DEFAULTS.openai;
+  return { ...mind, baseUrl: mind.baseUrl || defaults.baseUrl, model: mind.model || defaults.model };
+}
 
 function merge<T>(base: T, patch: unknown): T {
   if (patch == null || typeof patch !== "object" || Array.isArray(patch)) return base;

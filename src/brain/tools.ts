@@ -56,6 +56,8 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: string;
+  /** What the provider needs back with the call in the next request, such as Gemini's thought signature. */
+  signature?: string;
 }
 
 const LIST_MOST = 70;
