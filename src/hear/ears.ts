@@ -183,7 +183,7 @@ export class Ears {
     const fresh = words - s.judged;
     const wait = !config.hear.asides
       ? "off (hear.asides)"
-      : decider.backend !== "systemone"
+      : !decider.backend || decider.backend === "none"
         ? "off (no decision model)"
         : s.shown >= ASIDE_MOST
           ? `${ASIDE_MOST} shown, none left this turn`

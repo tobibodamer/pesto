@@ -3,9 +3,11 @@ import { trace } from "../debug/trace";
 import type { Actor } from "../pesto/actor";
 import { random } from "../pesto/math";
 import type { World } from "../world/world";
+import { RateLimited, type Backend, type Scene, type Taken } from "./deciders/backend";
 import { CodeDecider } from "./deciders/code";
-import { SystemOneDecider } from "./deciders/systemone";
-import type { Backend, Scene, Taken } from "./deciders/backend";
+import { GeminiDecisions } from "./deciders/gemini";
+import { ModelDecider } from "./deciders/model";
+import { SystemOne } from "./deciders/systemone";
 import type { Director, ReactionName } from "./director";
 import type { Journal, JournalEntry } from "./journal";
 import type { Mind } from "./mind";
@@ -19,12 +21,17 @@ const LADDER = ["none", "peek", "approach", "knock", "sign", "speak"] as const;
 const GIVE_UP_AFTER = 5;
 /** Seconds after giving up before the model is tried once more. */
 const RETRY_AFTER = 600;
+/** The same after the service said it gets too many requests. */
+const RETRY_AFTER_LIMIT = 60;
+
+type Provider = Config["decider"]["provider"];
 
 /**
  * Pesto's quick, wordless judgment. After anything notable happens it asks a
  * backend how he feels about it and what, if anything, he does, and hands
- * off to the big model only when it is worth speaking. The backend is the
- * System One model when configured and answering, and plain code otherwise.
+ * off to the big model only when it is worth speaking. The backend is a
+ * decision model (System One or Gemini) when configured and answering, and
+ * plain code otherwise.
  */
 export class Decider {
   private due = Infinity;
@@ -33,6 +40,7 @@ export class Decider {
   private inFlight = false;
   private failures = 0;
   private gaveUpAt = -Infinity;
+  private waitFor = RETRY_AFTER;
   private rung = 0;
   private rungHeld = 0;
   private slackSince = 0;
@@ -41,7 +49,7 @@ export class Decider {
   private fresh = false;
   private checkIn = false;
 
-  private systemOne: SystemOneDecider;
+  private models: Partial<Record<Provider, ModelDecider>>;
   private code: CodeDecider;
 
   constructor(
@@ -57,7 +65,10 @@ export class Decider {
     },
   ) {
     const { config, journal, now } = deps;
-    this.systemOne = new SystemOneDecider({ config, journal, now });
+    this.models = {
+      systemone: new ModelDecider(new SystemOne(config), { config, journal, now }),
+      gemini: new ModelDecider(new GeminiDecisions(config), { config, journal, now }),
+    };
     this.code = new CodeDecider({ config, now, rand: deps.rand ?? random });
     deps.journal.onEntry((e) => {
       if (e.kind === "pesto" || e.weight < 1) return;
@@ -70,14 +81,18 @@ export class Decider {
 
   /** The last answer from the decision model, for debugging. */
   get last() {
-    return this.systemOne.last;
+    return this.model()?.last ?? null;
   }
 
   /** Which backend decides right now, or null when reactions are off. */
-  get backend(): "systemone" | "none" | null {
+  get backend(): Provider | null {
     const { decider } = this.deps.config;
     if (!decider.enabled) return null;
-    return decider.provider === "systemone" && !this.down() ? "systemone" : "none";
+    return this.model()?.ready() && !this.down() ? decider.provider : "none";
+  }
+
+  private model() {
+    return this.models[this.deps.config.decider.provider];
   }
 
   /** Tries the model again after it kept failing, for when its settings have changed. */
@@ -107,29 +122,35 @@ export class Decider {
     void this.decide();
   }
 
-  /** True while the model has failed too often to be asked, apart from one try every RETRY_AFTER seconds. */
+  /** True while the model has failed too often to be asked, apart from one try once it has had a rest. */
   private down() {
     if (this.failures < GIVE_UP_AFTER) return false;
-    if (this.deps.now() - this.gaveUpAt < RETRY_AFTER) return true;
+    if (this.deps.now() - this.gaveUpAt < this.waitFor) return true;
     this.failures = GIVE_UP_AFTER - 1;
     return false;
   }
 
   /** Runs one decision on the current backend, falling back to code when the model does not answer. */
   private async judge<T>(run: (b: Backend) => Promise<T>): Promise<{ value: T; by: Backend }> {
-    if (this.backend !== "systemone") {
-      if (this.deps.config.decider.provider !== "systemone") trace.set("decider", "deciding in code");
+    const model = this.model();
+    if (!model || this.backend === "none") {
+      if (!model?.ready()) trace.set("decider", model ? `${model.label} has no key: deciding in code` : "deciding in code");
       return { value: await run(this.code), by: this.code };
     }
     try {
-      const value = await run(this.systemOne);
+      const value = await run(model);
       this.failures = 0;
-      return { value, by: this.systemOne };
+      return { value, by: model };
     } catch (err) {
-      if (++this.failures === GIVE_UP_AFTER) this.gaveUpAt = this.deps.now();
+      const limited = err instanceof RateLimited;
+      if (limited || ++this.failures === GIVE_UP_AFTER) {
+        this.failures = GIVE_UP_AFTER;
+        this.gaveUpAt = this.deps.now();
+        this.waitFor = limited ? RETRY_AFTER_LIMIT : RETRY_AFTER;
+      }
       const gaveUp = this.failures >= GIVE_UP_AFTER;
-      console.warn(`decider: ${err}${gaveUp ? ` (deciding in code, trying again in ${RETRY_AFTER / 60} min)` : ""}`);
-      if (gaveUp) trace.set("decider", "system one is not answering: deciding in code");
+      console.warn(`decider: ${err}${gaveUp ? ` (deciding in code, trying ${model.label} again in ${this.waitFor} s)` : ""}`);
+      if (gaveUp) trace.set("decider", `${model.label} is not answering: deciding in code`);
       return { value: await run(this.code), by: this.code };
     }
   }

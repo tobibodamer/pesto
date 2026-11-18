@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULTS, type Config } from "../config";
-import { postJson } from "../net";
+import { http, postJson } from "../net";
 import { Decider } from "./decider";
 
-vi.mock("../net", () => ({ postJson: vi.fn() }));
+vi.mock("../net", () => ({ postJson: vi.fn(), http: vi.fn() }));
 const post = vi.mocked(postJson);
+const fetched = vi.mocked(http);
 
 /** Just enough of everything the decider looks at, for driving it in steps. */
 function rig(decider: Partial<Config["decider"]>, rand = () => 0.99) {
@@ -36,6 +37,7 @@ function rig(decider: Partial<Config["decider"]>, rand = () => 0.99) {
 
 beforeEach(() => {
   post.mockReset();
+  fetched.mockReset();
 });
 
 describe("speaking up without a decision model", () => {
@@ -120,5 +122,32 @@ describe("falling back from System One", () => {
     expect(await r.d.called()).toBeNull();
     expect(post).not.toHaveBeenCalled();
     expect(r.wakes).toHaveLength(0);
+  });
+});
+
+describe("Gemini as the decision model", () => {
+  it("decides in code without asking when there is no key", async () => {
+    const r = rig({ provider: "gemini", speakUp: "always" });
+    await r.checkIn();
+    expect(fetched).not.toHaveBeenCalled();
+    expect(r.d.backend).toBe("none");
+    expect(r.wakes).toHaveLength(1);
+  });
+
+  it("rests for a minute after a rate limit, deciding in code meanwhile", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    fetched.mockResolvedValue(new Response("{}", { status: 429 }));
+    const r = rig({ provider: "gemini", apiKey: "k" });
+    await r.checkIn();
+    expect(fetched).toHaveBeenCalledTimes(1);
+    expect(r.d.backend).toBe("none");
+    r.clock.t += 60;
+    expect(r.d.backend).toBe("gemini");
+  });
+
+  it("keeps asides on", async () => {
+    fetched.mockResolvedValue(new Response(JSON.stringify({ answers: { aside: { type: "choice", choice: "amused", probabilities: { amused: 0.8, none: 0.2 }, confidence: 0.8 } } })));
+    const r = rig({ provider: "gemini", apiKey: "k" });
+    expect(await r.d.aside("that was so funny when the cat fell off the shelf", null)).toBe("amused");
   });
 });

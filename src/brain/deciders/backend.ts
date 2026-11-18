@@ -113,3 +113,6 @@ export function weighted<T extends string>(weights: Partial<Record<T, number>>, 
   for (const [k, w] of entries) if ((r -= w) < 0) return k;
   return entries[entries.length - 1][0];
 }
+
+/** The service is up but asks to be left alone for a while. */
+export class RateLimited extends Error {}
