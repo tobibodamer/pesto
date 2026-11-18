@@ -5,7 +5,7 @@ import { chance, clamp, pick, rand, sign } from "../pesto/math";
 import { listening, type Hearing, type ListenMove, type ListenPose } from "../pesto/listening";
 import * as moves from "../pesto/moves";
 import type { Emotion } from "../pesto/pose";
-import { until, wait, type Routine } from "../pesto/routine";
+import { tween, until, wait, type Routine } from "../pesto/routine";
 import * as show from "../pesto/show";
 import type { Litter } from "../stage/litter";
 import type { Ledge, World } from "../world/world";
@@ -319,7 +319,8 @@ export class Director {
   /** What the microphone hears of the person, kept current by the ears while he listens. */
   hearing: Hearing = { level: 0, speaking: false };
 
-  private attentive = false;
+  /** Whether he is giving them his whole attention, while they type or speak to him. */
+  attentive = false;
   private listenPose: ListenPose | null = null;
   /** Seconds until a face he pulled at what they said gives way to plain attention again. */
   private faceFor = 0;
@@ -366,7 +367,10 @@ export class Director {
       a.cue("eep");
       void a.run(moves.duck(a));
     });
-    a.on("poked", () => void this.perform("swat"));
+    a.on("poked", () => {
+      if (this.shush?.()) void a.run(this.shushed());
+      else void this.perform("swat");
+    });
     a.on("petted", () => a.cue("chitter"));
     a.on("grabbed", () => this.onGrabbed());
     a.on("dropped", ({ onLedge }) => {
@@ -385,7 +389,7 @@ export class Director {
       this.glassAt = chance(0.75) ? this.world.time + rand(0.18, 0.42) : null;
     });
     a.on("thrown", () => a.cue("yelp"));
-    a.on("shaken", () => a.cue("dizzy"));
+    a.on("shaken", () => a.cue("dizzy", { breaksOff: true }));
     a.on("landed", ({ hard }) => {
       a.cue(hard ? "thud" : "land");
       if (!hard || a.busy) return;
@@ -393,7 +397,7 @@ export class Director {
       void a.run(this.glareAfter(1.7));
     });
     a.on("slid", () => {
-      a.cue("squeak");
+      a.cue("squeak", { breaksOff: true });
       a.feel("annoyed", 2);
       a.look({ kind: "user" }, 1.5);
     });
@@ -698,6 +702,32 @@ export class Director {
     a.feel("glare", 3);
     a.look({ kind: "user" }, 3);
     yield* wait(2.4);
+  }
+
+  /** Poked while he talks, he shuts up. Returns whether there was anything to stop. */
+  shush?: () => boolean;
+
+  /** Shut up mid-sentence: he flinches away from the poke, clamps his mouth and sulks at them. */
+  private *shushed(): Routine {
+    const a = this.actor;
+    const away = a.world.cursor.x >= a.x ? -1 : 1;
+    a.feel("surprised", 0.35);
+    a.look({ kind: "user" }, 3.5);
+    yield* tween(0.5, (u) => {
+      const k = Math.sin(Math.min(1, u * 2.2) * Math.PI * 0.5) * (1 - Math.max(0, u - 0.45) / 0.55);
+      a.gesture = (p) => {
+        p.lean += away * 0.12 * k;
+        p.squash += 0.06 * k;
+        p.earL += 0.35 * k;
+        p.earR += 0.35 * k;
+        p.mouthOpen = 0;
+      };
+    });
+    a.gesture = (p) => {
+      p.mouthOpen = 0;
+    };
+    a.feel(pick(["grumpy", "glare", "annoyed"] as const), 3);
+    yield* wait(2.6);
   }
 
   /** Called when he looks for somewhere to go on a monitor, so the app can learn what is inside its windows. */

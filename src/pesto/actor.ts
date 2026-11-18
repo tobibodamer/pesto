@@ -44,6 +44,8 @@ export interface ActorEvents {
   bumped: { speed: number; stumbled: boolean };
   /** A moment that should make a sound: "knock", "clank", "lid", "clap", "thud", "swat". */
   cue: string;
+  /** Something made him stop talking mid-reply to make a sound of his own. */
+  brokeOff: void;
 }
 
 export const GRAVITY = 2300;
@@ -64,6 +66,15 @@ const EFFORT = {
   heave: { sounds: ["churr", "churr2", "trill", "trill2", "whine"], rest: 14 },
 };
 type Effort = keyof typeof EFFORT;
+/**
+ * Sounds that come out of his mouth, so they never play over his own talking:
+ * that sounds like a second raccoon. A short eep, gasp or yelp is not among
+ * them and slips out anyway.
+ */
+const MOUTH = new Set([
+  ...Object.values(EFFORT).flatMap((e) => e.sounds),
+  "huh", "chitter", "grumble", "squeak", "dizzy", "chew", "mutter", "mutter2", "mutter3", "snore",
+]);
 const SLIDE_SPEED = 330;
 /**
  * His body as the cursor meets it: an ellipse standing on his feet, this far
@@ -146,6 +157,8 @@ export class Actor {
   dizzy = 0;
   /** True while he is saying something; `speech` is how open his mouth is, 0..1. */
   talking = false;
+  /** True from his first word of a reply until it is over or cut off, the pauses between sentences included. */
+  inSpeech = false;
   speech = 0;
 
   private emotion: Emotion | null = null;
@@ -219,8 +232,16 @@ export class Actor {
     this.listeners.get(name)?.forEach((fn) => fn(payload));
   }
 
-  /** Marks a moment that should be heard. */
-  cue(name: string) {
+  /**
+   * Marks a moment that should be heard. While he is in the middle of a
+   * reply, a noise from his mouth is left out, unless it `breaksOff`: then he
+   * stops talking to make it.
+   */
+  cue(name: string, opts: { breaksOff?: boolean } = {}) {
+    if (this.inSpeech && MOUTH.has(name)) {
+      if (!opts.breaksOff) return;
+      this.emit("brokeOff", undefined);
+    }
     this.emit("cue", name);
   }
 
@@ -230,7 +251,7 @@ export class Actor {
    */
   strain(kind: Effort, likelihood = 0.5) {
     const now = this.world.time;
-    if (this.talking || now < this.quietUntil || now < (this.rested[kind] ?? -Infinity) || !chance(likelihood)) return;
+    if (this.inSpeech || this.talking || now < this.quietUntil || now < (this.rested[kind] ?? -Infinity) || !chance(likelihood)) return;
     const { sounds, rest } = EFFORT[kind];
     this.quietUntil = now + 1.5;
     this.rested[kind] = now + rest * rand(0.8, 1.4);

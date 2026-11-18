@@ -197,6 +197,7 @@ const SECTIONS: Section[] = [
           },
         ],
       },
+      { kind: "switch", key: "hear.bargeIn", label: "Interrupt by talking" },
       { kind: "switch", key: "hear.asides", label: "React while you talk", hint: "He reacts to what you say before you finish. Needs Reactions and speech to text." },
       {
         kind: "select",

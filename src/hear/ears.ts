@@ -13,6 +13,8 @@ import type { Paper } from "../stage/bubble";
 interface HearEvents {
   /** The wake word was heard. */
   "hear://wake": { keyword: string };
+  /** They started talking over him while he spoke. A turn without his name has begun. */
+  "hear://barge": Record<string, never>;
   /** Their voice while he listens, about 25 times a second. */
   "hear://voice": { level: number; speaking: boolean };
   /** What they have said so far in this turn, and how finished it sounds, 0..1, when the transcriber can tell. */
@@ -66,6 +68,9 @@ export class Ears {
   private nameless = 0;
   private asides = { judged: 0, judgedAt: 0, shownAt: -Infinity, shown: 0, last: null as string | null, busy: false };
   private told = false;
+  /** Whether his ears are watching for their voice over his, and whether the turn being heard began that way. */
+  private overHim = false;
+  private cutIn = false;
 
   constructor(
     private deps: {
@@ -96,6 +101,7 @@ export class Ears {
       this.deps.paper.show(`I hear you, but not the words. ${why}`, "note", 12, this.deps.now());
     });
     await on("hear://wake", () => void this.called());
+    await on("hear://barge", () => this.talkedOver());
     await on("hear://voice", (v) => {
       if (this.listening) this.deps.director.hearing = v;
     });
@@ -114,6 +120,15 @@ export class Ears {
     const stt = hear.provider === "elevenlabs" && apiKey ? { apiKey, model: hear.model, language: hear.language } : null;
     void invoke("hear_enable", { on, threshold: hear.threshold, stt }).catch((err) => console.warn("ears:", err));
     if (!on && this.listening) this.relax();
+  }
+
+  /** Call every frame with whether he is speaking, so that their voice over his cuts him off. */
+  speaking(on: boolean) {
+    const { hear } = this.deps.config;
+    const want = on && hear.enabled && hear.bargeIn;
+    if (want === this.overHim) return;
+    this.overHim = want;
+    void invoke("hear_talking", { on: want }).catch(() => {});
   }
 
   /** Plays a WAV into his ears in place of the microphone, for trying things without saying them. */
@@ -145,6 +160,18 @@ export class Ears {
     if (director.hearing.speaking || wasTalking || again) return;
     const sound = taken ? taken.sound : woke || actor.mood === "sleepy" ? "grumble" : "huh";
     if (sound) actor.cue(sound);
+  }
+
+  private talkedOver() {
+    const { director, mind } = this.deps;
+    this.calls++;
+    this.nameless++;
+    this.overHim = false;
+    mind.interrupt("they started talking over him");
+    trace.log("hear", "talked over him: he stops and listens");
+    this.begin();
+    this.cutIn = true;
+    director.listen(true);
   }
 
   /** Now and then, while they are still talking, lets what they have said so far show on him. */
@@ -200,7 +227,7 @@ export class Ears {
     const call = this.calls;
     if (this.nameless > 0) {
       trace.set("ears", "is that for him?");
-      const why = await this.notForHim(e.text);
+      const why = await this.notForHim(e.text, this.cutIn);
       if (call !== this.calls || this.listening) return;
       if (why) {
         trace.log("hear", `not for him: ${why}`);
@@ -231,11 +258,12 @@ export class Ears {
   }
 
   /** Why what was heard without his name should be left alone, or null when he answers it. */
-  private async notForHim(text: string): Promise<string | null> {
+  private async notForHim(text: string, overHim: boolean): Promise<string | null> {
     const { config, decider, mind } = this.deps;
     const words = meaningful(text);
     if (words < Math.max(1, config.hear.followUpWords)) return words ? `only ${words} word${words === 1 ? "" : "s"}` : "only filler";
-    if (config.hear.followUpCheck <= 0) return null;
+    // Talking over him is aimed at him. The decision model hears a change of subject as said to someone else.
+    if (config.hear.followUpCheck <= 0 || overHim) return null;
     const p = await decider.replying(text, mind.lastSaid);
     if (p == null) return null;
     return p < config.hear.followUpCheck ? `${p.toFixed(2)} sure it was meant for him` : null;
@@ -243,6 +271,7 @@ export class Ears {
 
   private begin() {
     this.listening = true;
+    this.cutIn = false;
     trace.set("ears", "listening");
     trace.set("heard", null);
     trace.set("aside", null);

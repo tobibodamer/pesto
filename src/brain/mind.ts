@@ -68,6 +68,8 @@ export class Mind {
   private journalMark = 0;
   private performance: Performance | null = null;
   private abort: AbortController | null = null;
+  /** Why they stopped him, for the journal once the cut-off reply has wound down. */
+  private cutOff: string | null = null;
   private warned = false;
   /** Set once the endpoint has turned down a request that offered tools. */
   private toolless = false;
@@ -92,10 +94,17 @@ export class Mind {
     return !!(m.baseUrl && m.model);
   }
 
-  /** Cuts him off mid-sentence. */
-  interrupt() {
+  /**
+   * Cuts him off mid-sentence, or before he has said anything. With `why`,
+   * the journal remembers that they stopped him. Returns whether there was
+   * anything to stop.
+   */
+  interrupt(why?: string): boolean {
+    if (!this.busy) return false;
+    if (why) this.cutOff = why;
     this.abort?.abort();
     this.performance?.cancel();
+    return true;
   }
 
   async wake(reason: WakeReason): Promise<void> {
@@ -246,10 +255,13 @@ export class Mind {
         this.lastSpokeAt = this.deps.now();
       }
       if (performance.did.length) journal.add("pesto", `did: ${performance.did.join(", ")}`);
+      if (this.cutOff) journal.add("pesto", `was cut off: ${this.cutOff}`, 2);
+      this.cutOff = null;
       this.journalMark = journal.now() + 1;
       if (this.performance === performance) {
         this.performance = null;
         this.busy = false;
+        actor.inSpeech = false;
         director.autonomous = true;
       }
     }

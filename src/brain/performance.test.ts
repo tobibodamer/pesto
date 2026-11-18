@@ -55,6 +55,7 @@ function setup(opts: { audible?: boolean; captions?: boolean; mayAct?: boolean }
   const shown: { text: string; kind: string; seconds?: number }[] = [];
   const actor = {
     talking: false,
+    inSpeech: false,
     speech: 0,
     stopped: 0,
     /** As on the real actor, stopping him ends the move he is in. */
@@ -202,6 +203,19 @@ describe("Performance: the two tracks", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(t.actor.talking).toBe(false);
     expect(t.actor.speech).toBe(0);
+  });
+
+  it("stays in the middle of his reply between sentences", async () => {
+    const t = setup();
+    t.push("One. Two.");
+    await settle();
+    expect(t.actor.inSpeech).toBe(false);
+    t.lines[0].started();
+    await settle();
+    t.lines[0].finished();
+    await settle();
+    expect(t.actor.talking).toBe(false);
+    expect(t.actor.inSpeech).toBe(true);
   });
 });
 
@@ -539,6 +553,7 @@ describe("Performance: being cut off", () => {
     expect(t.performance.said).toEqual(["One."]);
     expect(t.actor.stopped).toBe(1);
     expect(t.actor.talking).toBe(false);
+    expect(t.actor.inSpeech).toBe(false);
     expect(t.paper.hidden).toBe(1);
   });
 

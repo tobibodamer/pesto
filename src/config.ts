@@ -82,6 +82,8 @@ export interface Config {
     followUpCheck: number;
     /** Lets what they are saying show on his face while they are still talking. Needs the decision model and speech to text. */
     asides: boolean;
+    /** Talking over him while he speaks cuts him off and he listens, no name needed. On speakers rather than headphones he can hear himself and stop short. */
+    bargeIn: boolean;
     /** What turns speech into text. With "none" he hears his name but not what is said. */
     provider: "elevenlabs" | "none";
     /** Empty uses the voice's key. */
@@ -126,7 +128,7 @@ export const DEFAULTS: Config = {
   decider: { enabled: true, baseUrl: "http://triton:11434", model: "d1:2b-q8_0", speakAbove: 0.72 },
   voice: { provider: "none", apiKey: "", voiceId: "", model: "eleven_v4_turbo", stability: 0.35, volume: 0.9, captions: false, muted: false, width: 0.3 },
   sfx: { enabled: true, volume: 0.9, reactions: 1, breathing: 1, can: 1, bumps: 1 },
-  hear: { enabled: true, threshold: 0.25, followUp: 5, followUpReplies: 2, followUpWords: 1, followUpCheck: 0.5, asides: true, provider: "elevenlabs", apiKey: "", model: "scribe_v3_live", language: "" },
+  hear: { enabled: true, threshold: 0.25, followUp: 5, followUpReplies: 2, followUpWords: 1, followUpCheck: 0.5, asides: true, bargeIn: true, provider: "elevenlabs", apiKey: "", model: "scribe_v3_live", language: "" },
   agents: { watch: false, port: 47733, token: "", command: "claude", permissionMode: "acceptEdits", model: "" },
   debug: { panel: false },
   body: { scale: 0.8, can: 1, border: 0 },

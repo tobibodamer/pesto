@@ -42,6 +42,8 @@ const ears = new Ears({ config, director, actor, journal, mind, decider, paper, 
 await ears.connect();
 
 actor.on("cue", (name) => voice.cue(name));
+actor.on("brokeOff", () => mind.interrupt());
+director.shush = () => mind.interrupt("they poked him to shut him up");
 
 /** Puts settings into effect, wherever they were changed: here, in the settings window or in config.json through it. */
 function apply(patch: Patch<Config>) {
@@ -140,6 +142,7 @@ function frame(t: number) {
   journal.update(dt);
   decider.update(dt);
   stage.render();
+  ears.speaking(actor.inSpeech);
   debugPanel.update();
   voice.place(actor.visible ? actor.toWorld(actor.puppet.anchors?.mouth ?? { x: 0, y: -110 }) : stage.crown, !actor.visible);
   setHitRegions(stage.hitRegions());

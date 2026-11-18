@@ -148,7 +148,7 @@ export class Decider {
   }
 
   update(dt: number) {
-    const { config, world, mind, actor } = this.deps;
+    const { config, world, mind, actor, director } = this.deps;
     if (!config.decider.enabled || this.failures >= 5) return;
     this.cooling = Math.max(0, this.cooling - dt);
     this.rungHeld += dt;
@@ -162,7 +162,7 @@ export class Decider {
       }
     }
     if (this.deps.now() < this.due || this.cooling > 0 || this.inFlight) return;
-    if (mind.busy || actor.mode === "held" || actor.mode === "air") return;
+    if (mind.busy || director.attentive || actor.mode === "held" || actor.mode === "air") return;
     this.due = Infinity;
     this.cooling = 5;
     void this.decide();
@@ -235,6 +235,8 @@ export class Decider {
       this.inFlight = false;
     }
 
+    // They may have started talking to him while the model was deciding.
+    if (director.attentive) return trace.log("decider", "→ nothing: he is listening to them");
     const a = res.answers;
     const feeling = a.feeling?.type === "choice" && a.feeling.confidence > 0.38 ? (a.feeling.choice as Emotion) : null;
     const speak = a.speak?.type === "noul" ? a.speak.noul : 0;

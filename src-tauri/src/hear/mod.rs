@@ -6,6 +6,7 @@
 //!
 //!   hear://status  { ready, error }      the microphone came up or went away
 //!   hear://wake    { keyword }           his name was said
+//!   hear://barge   {}                    they started talking over him while he spoke
 //!   hear://voice   { level, speaking }   their voice, 25 times a second while listening
 //!   hear://words   { text, done }        what they have said so far, and how finished it sounds (0..1)
 //!   hear://ended   { text, spoke }       their turn is over
@@ -50,6 +51,8 @@ const BEFORE_NAME: usize = RATE * 3 / 2;
 const MIN_SPEECH: usize = RATE / 4;
 /// How long he waits for them to start after his name.
 const WAIT_AFTER_NAME: f32 = 5.0;
+/// How long they must talk over him, without a break, before it counts as cutting him off. A short "mhm" does not.
+const BARGE_SPEECH: usize = RATE * 6 / 10;
 /// No turn is longer than this.
 const LONGEST_TURN: usize = RATE * 45;
 const RETRY: Duration = Duration::from_secs(3);
@@ -57,6 +60,7 @@ const RETRY: Duration = Duration::from_secs(3);
 enum Command {
     Enable { on: bool, threshold: f32, stt: Option<stt::Settings> },
     Listen { seconds: f32 },
+    Talking(bool),
     Stop,
     Feed(Vec<f32>),
 }
@@ -87,6 +91,12 @@ pub fn hear_listen(hear: State<'_, Arc<Hear>>, seconds: f32) -> Result<(), Strin
         return Err("the microphone is not being listened to".into());
     }
     hear.send(Command::Listen { seconds })
+}
+
+/// Tells his ears whether he is speaking, so that their voice over his starts a turn without his name.
+#[tauri::command]
+pub fn hear_talking(hear: State<'_, Arc<Hear>>, on: bool) -> Result<(), String> {
+    hear.send(Command::Talking(on))
 }
 
 #[tauri::command]
@@ -242,6 +252,9 @@ struct Ears {
     /// A recording being heard in place of the microphone.
     fed: VecDeque<f32>,
     error: Option<String>,
+    /// Whether he is speaking, and how long they have been talking over him without a break.
+    talking: bool,
+    over_him: usize,
 }
 
 impl Ears {
@@ -368,6 +381,19 @@ impl Ears {
             self.begin_turn(WAIT_AFTER_NAME, before);
             return;
         }
+        if self.talking && self.turn.is_none() {
+            self.over_him = if speaking { self.over_him + samples.len() } else { 0 };
+            if self.over_him >= BARGE_SPEECH {
+                self.talking = false;
+                self.emit("hear://barge", &serde_json::json!({}));
+                let before = self.recent.iter().copied().collect();
+                self.begin_turn(WAIT_AFTER_NAME, before);
+                if let Some(turn) = self.turn.as_mut() {
+                    turn.speech = std::mem::take(&mut self.over_him);
+                }
+                return;
+            }
+        }
         let finished = self.listen_to_transcriber();
         let Some(turn) = self.turn.as_mut() else {
             return;
@@ -421,6 +447,10 @@ impl Ears {
                         if self.mic.is_some() {
                             self.begin_turn(seconds, Vec::new());
                         }
+                    }
+                    Command::Talking(on) => {
+                        self.talking = on;
+                        self.over_him = 0;
                     }
                     Command::Stop => self.end_turn(false),
                     Command::Feed(samples) => self.fed.extend(samples),
@@ -485,6 +515,8 @@ pub fn start(app: &AppHandle, sense: Arc<SenseState>) -> Arc<Hear> {
                 recent: VecDeque::with_capacity(BEFORE_NAME),
                 fed: VecDeque::new(),
                 error: None,
+                talking: false,
+                over_him: 0,
             };
             ears.run(rx, sense)
         })

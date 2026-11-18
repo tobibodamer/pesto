@@ -98,6 +98,7 @@ pub fn run() {
             config::settings_hide,
             hear::hear_enable,
             hear::hear_listen,
+            hear::hear_talking,
             hear::hear_stop,
             hear::hear_feed,
             sense_snapshot,

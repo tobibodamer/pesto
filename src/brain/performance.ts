@@ -105,7 +105,7 @@ export class Performance {
       await u.started;
       begun();
       this.said.push(spokenText(text));
-      actor.talking = true;
+      actor.talking = actor.inSpeech = true;
       if (this.deps.captions || !voice.audible) paper.show(spokenText(text), "speech");
       const pump = setInterval(() => (actor.speech = u.level()), 33);
       await u.finished;
@@ -301,6 +301,7 @@ export class Performance {
     this.current?.stop();
     this.pending.forEach((l) => l.discard());
     this.pending.clear();
+    this.deps.actor.inSpeech = false;
     this.deps.actor.stop();
     this.deps.paper.hide();
   }
