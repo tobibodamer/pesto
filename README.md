@@ -33,7 +33,7 @@ Settings live in `%APPDATA%\dev.pesto.app\config.json`. Every key is optional; m
 | Section | What it sets |
 |---|---|
 | `mind` | The model that speaks and plans. `provider` is `openai` (any OpenAI-compatible chat endpoint, the default) or `gemini` (Google's Gemini API, free tier with a key from [AI Studio](https://aistudio.google.com/apikey)). `baseUrl`, `apiKey`, `model`; for Gemini an empty `baseUrl` or `model` means `https://generativelanguage.googleapis.com/v1beta` and `gemini-3.6-flash`. |
-| `decider` | A small local model (Ollama) that picks his silent reactions and decides when he should speak up. |
+| `decider` | His silent reactions and when he speaks up unprompted. `provider` is `systemone` (a small decision model on Ollama's `/v1/systemone` at `baseUrl`, default `http://localhost:11434`), `gemini` (Google's [Decisions API](https://aistudio.google.com/docs/decisions-api), `gemini-decision-1`, free tier; `apiKey`, or the mind's key when the mind runs on Gemini) or `none` (simple rules in code, no setup). When the model stops answering he decides in code and tries it again after 10 minutes, or after 1 minute when Gemini says it is rate limited. Without a model, `speakUp` (`never`, `sometimes`, `always`) sets how often a check-in wakes the mind. |
 | `voice` | ElevenLabs text to speech: `apiKey`, `voiceId`. Without it he answers in speech bubbles. |
 | `hear` | Microphone, wake word and ElevenLabs Scribe speech to text. |
 | `body` | His size, the can's size and the sticker border. |
@@ -56,12 +56,12 @@ Tauri 2 with one WebView2 overlay window. Coordinates everywhere are physical vi
 | `src/sense/` | The sense contract and bridge to the webview |
 | `src/world/` | World model: ledges from taskbars and window tops |
 | `src/pesto/`, `src/can/`, `src/render/`, `src/stage/` | Character rig, emotions, moves, the can, drawing |
-| `src/brain/` | Director (reflexes and idle life), journal, decider, mind, performance scripts |
+| `src/brain/` | Director (reflexes and idle life), journal, decider and its backends (`deciders/`), mind, performance scripts |
 | `src/voice/`, `public/hrir`, `public/sfx` | Speech, binaural rendering, generated sounds |
 | `src/hear/` | The conversation around the microphone |
 | `dev/` | Dev harness and tools |
 
-Behaviour runs in three tiers. Reflexes such as blinking, gaze and being grabbed are plain code. Silent reactions come from the decider, a few times a minute at most. Only speech and plans go to the big model, which answers in a performance script: plain text is speech, `<direction/>` tags are stage directions, so he can move mid-sentence.
+Behaviour runs in three tiers. Reflexes such as blinking, gaze and being grabbed are plain code. Silent reactions come from the decider, a few times a minute at most: a small decision model when there is one, otherwise rules in code. Only speech and plans go to the big model, which answers in a performance script: plain text is speech, `<direction/>` tags are stage directions, so he can move mid-sentence.
 
 ## Dev tools
 

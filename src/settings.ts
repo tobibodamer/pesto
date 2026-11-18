@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { absorb, DEFAULTS, loadConfig, MIND_DEFAULTS, saveConfig, type Config } from "./config";
+import { absorb, DECIDER_MODELS, DEFAULTS, loadConfig, MIND_DEFAULTS, saveConfig, type Config } from "./config";
 
 type Path = string;
 
@@ -60,6 +60,9 @@ const usesVoice = (c: Config) => c.voice.provider === "elevenlabs";
 const transcribes = (c: Config) => c.hear.provider === "elevenlabs";
 const replies = (c: Config) => c.hear.followUp > 0;
 const gemini = (c: Config) => c.mind.provider === "gemini";
+const systemOne = (c: Config) => c.decider.provider === "systemone";
+const geminiDecides = (c: Config) => c.decider.provider === "gemini";
+const modelDecides = (c: Config) => systemOne(c) || geminiDecides(c);
 
 const SECTIONS: Section[] = [
   {
@@ -127,13 +130,37 @@ const SECTIONS: Section[] = [
   },
   {
     id: "reactions",
-    about: "A small local model that picks his silent reactions and decides when something is worth saying.",
+    about: "What he does without words, and when something is worth saying.",
     title: "Reactions",
     on: { key: "decider.enabled" },
     fields: [
-      { kind: "text", key: "decider.baseUrl", label: "Endpoint", hint: "An Ollama server with the System One API.", placeholder: "http://localhost:11434" },
-      { kind: "text", key: "decider.model", label: "Model" },
-      { kind: "slider", key: "decider.speakAbove", label: "Speak-up threshold", hint: "How sure he must be that something is worth saying. Higher is quieter.", min: 0, max: 1, step: 0.01, show: percent },
+      {
+        kind: "select",
+        key: "decider.provider",
+        label: "Decided by",
+        options: [
+          ["none", "Built in"],
+          ["gemini", "Gemini"],
+          ["systemone", "System One"],
+        ],
+        resets: ["decider.model"],
+      },
+      { kind: "text", key: "decider.baseUrl", label: "Endpoint", hint: "An Ollama server with the System One API.", placeholder: "http://localhost:11434", only: systemOne },
+      { kind: "text", key: "decider.apiKey", label: "API key", secret: true, placeholder: (c) => (gemini(c) ? "Same as mind" : ""), only: geminiDecides },
+      { kind: "link", label: "Free key", href: "https://aistudio.google.com/apikey", text: "Google AI Studio", only: geminiDecides },
+      { kind: "text", key: "decider.model", label: "Model", placeholder: (c) => DECIDER_MODELS[c.decider.provider] ?? "", only: modelDecides },
+      { kind: "slider", key: "decider.speakAbove", label: "Speak-up threshold", hint: "How sure he must be that something is worth saying. Higher is quieter.", min: 0, max: 1, step: 0.01, show: percent, only: modelDecides },
+      {
+        kind: "select",
+        key: "decider.speakUp",
+        label: "Speaks up",
+        options: [
+          ["never", "Never"],
+          ["sometimes", "Now and then"],
+          ["always", "Whenever he may"],
+        ],
+        only: (c) => !modelDecides(c),
+      },
     ],
   },
   {
@@ -214,12 +241,12 @@ const SECTIONS: Section[] = [
             max: 0.95,
             step: 0.05,
             show: (v) => (v > 0 ? percent(v) : "Off"),
-            when: (c) => replies(c) && c.decider.enabled,
+            when: (c) => replies(c) && c.decider.enabled && modelDecides(c),
           },
         ],
       },
       { kind: "switch", key: "hear.bargeIn", label: "Interrupt by talking" },
-      { kind: "switch", key: "hear.asides", label: "React while you talk", hint: "He reacts to what you say before you finish. Needs Reactions and speech to text." },
+      { kind: "switch", key: "hear.asides", label: "React while you talk", hint: "He reacts to what you say before you finish. Needs a decision model and speech to text." },
       {
         kind: "select",
         key: "hear.provider",
