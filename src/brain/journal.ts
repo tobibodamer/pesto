@@ -184,6 +184,11 @@ export class Journal {
     }
   }
 
+  /** The microphone has been hearing them talk, to him or anyone else. */
+  get personTalking() {
+    return this.talking;
+  }
+
   /** How long the current window has had focus, in seconds. */
   get focusSeconds() {
     return this.focus ? (this.now() - this.focus.since) / 1000 : 0;

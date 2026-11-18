@@ -33,13 +33,17 @@ export interface Config {
     /** Minimum seconds between times he speaks up unprompted. */
     quietSeconds: number;
   };
-  /** The small local model that decides his silent reactions. Ollama's /v1/systemone. */
+  /** His silent reactions, and when something is worth waking the mind for. */
   decider: {
     enabled: boolean;
+    /** "systemone" asks a small model on Ollama's /v1/systemone; "none" decides in code. */
+    provider: "systemone" | "none";
     baseUrl: string;
     model: string;
-    /** Probability above which "should he speak" wakes the mind. */
+    /** Probability above which the model's "should he speak" wakes the mind. */
     speakAbove: number;
+    /** When he speaks up unprompted with no model to judge it: at no check-in, at some, or at every one. */
+    speakUp: "never" | "sometimes" | "always";
   };
   voice: {
     provider: "elevenlabs" | "none";
@@ -129,7 +133,7 @@ export interface Config {
 export const DEFAULTS: Config = {
   you: { name: "", occupation: "", birthday: "", language: "", notes: "" },
   mind: { provider: "openai", baseUrl: "", apiKey: "", model: "", temperature: 0.9, reasoningEffort: "low", quietSeconds: 240 },
-  decider: { enabled: true, baseUrl: "http://triton:11434", model: "d1:2b-q8_0", speakAbove: 0.72 },
+  decider: { enabled: true, provider: "systemone", baseUrl: "http://localhost:11434", model: "d1:2b-q8_0", speakAbove: 0.72, speakUp: "sometimes" },
   voice: { provider: "none", apiKey: "", voiceId: "", model: "eleven_v4_turbo", stability: 0.35, volume: 0.9, captions: false, muted: false, width: 0.3 },
   sfx: { enabled: true, volume: 0.9, reactions: 1, breathing: 1, can: 1, bumps: 1 },
   hear: { enabled: true, threshold: 0.25, followUp: 5, followUpReplies: 2, followUpWords: 1, followUpCheck: 0.5, asides: true, bargeIn: true, provider: "elevenlabs", apiKey: "", model: "scribe_v3_live", language: "" },

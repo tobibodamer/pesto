@@ -45,7 +45,7 @@ In order. Each step leaves the app in a runnable state.
 | Stage: sprites, sticker border, hit regions | `src/stage/` | ✅ |
 | Director: idle life, reflexes, reaction catalog | `src/brain/director.ts` | ✅ headless, 🟡 live |
 | Journal: debounced activity log and desktop snapshot for the model | `src/brain/journal.ts` | ✅ |
-| Decider: small local model picks silent reactions and when to wake the mind | `src/brain/decider.ts` | ✅ decisions live; the pestering ladder is untested |
+| Decider: picks silent reactions and when to wake the mind, through a backend: the System One model, or rules in code when there is none or it stops answering | `src/brain/decider.ts`, `src/brain/deciders/` | ✅ System One live; 🟡 the code backend is unit tested, not yet watched on him; the pestering ladder is untested |
 | Mind: streaming OpenAI-compatible chat that writes a performance script | `src/brain/mind.ts`, `persona.ts` | ✅ |
 | Mind providers: OpenAI-compatible, or Gemini on Google's native streaming API with tools and thinking levels (free tier) | `src/brain/providers/` | ✅ unit tested |
 | Performance script: speech and `<direction/>` tags interleaved on a voice track and a body track | `src/brain/script.ts`, `performance.ts` | ✅ live and tested |
@@ -215,7 +215,7 @@ In order. Each step leaves the app in a runnable state.
 
 | Behaviour | State |
 |---|---|
-| Silent reactions picked by the decider | 🟡 |
+| Silent reactions picked by the decider | 🟡 System One, or odds per kind of event in code with a 25 s rest after each. Without the model there is no pestering and no reacting while they talk, and a reply without his name is judged by the word and time rules alone |
 | Typo wince | ⬜ |
 | Save nod | ⬜ |
 | Buried under tabs | ⬜ |
@@ -230,7 +230,7 @@ In order. Each step leaves the app in a runnable state.
 |---|---|
 | Rustle, glance, approach, knock, speech | 🟡 each exists, the ladder as a sequence is only wired for scrolling |
 | Shrug and wander off when ignored | ⬜ |
-| Minimum quiet time between unprompted speech | 🟡 |
+| Minimum quiet time between unprompted speech | 🟡 `mind.quietSeconds`; without a decision model `decider.speakUp` (default `sometimes`, one check-in in five) decides, and never while the microphone hears them talking |
 
 ### Scrolling routine
 
@@ -374,4 +374,4 @@ pnpm test                                  the script parser, the performance pl
 cargo test --lib act -- --ignored --nocapture --test-threads=1    in src-tauri: presses, moves and closes a Character Map window it opens itself
 ```
 
-`PESTO_SENSE_LOG=1` prints sense event counts. Through poke or the overlay's devtools, `pesto.say("…")` talks to him, `pesto.director.perform("dance")` plays a reaction, `pesto.director.perform("tap", { target: "cursor" })` (or `"throw"`, `"point"`) shows a spot, `pesto.sight.look(pesto.world.foreground)` lists what he can see in a window, `pesto.hands.move(pesto.world.foreground, "left")` works a window without the model, `pesto.decider.last` shows the last silent decision, `pesto.jobs.describe()` his timers and agents as the mind sees them, `pesto.mind.last` the last time he woke: what the model wrote, called and failed at. Debug in his menu (`debug.panel`) draws a live trace in the corner of his screen: every request to the decision model with its time and likeliest answers, what his ears heard, why he did or did not react while listening, and the route of each dash. The same lines go to the console and `pesto.trace.lines`.
+`PESTO_SENSE_LOG=1` prints sense event counts. Through poke or the overlay's devtools, `pesto.say("…")` talks to him, `pesto.director.perform("dance")` plays a reaction, `pesto.director.perform("tap", { target: "cursor" })` (or `"throw"`, `"point"`) shows a spot, `pesto.sight.look(pesto.world.foreground)` lists what he can see in a window, `pesto.hands.move(pesto.world.foreground, "left")` works a window without the model, `pesto.decider.last` shows the last silent decision, `pesto.jobs.describe()` his timers and agents as the mind sees them, `pesto.mind.last` the last time he woke: what the model wrote, called and failed at. Debug in his menu (`debug.panel`) draws a live trace in the corner of his screen: every request to the decision model with its time and likeliest answers, what his ears heard, why he did or did not react while listening, and the route of each dash. Each decision line names the backend that made it (`system one →` or `code →`). The same lines go to the console and `pesto.trace.lines`.

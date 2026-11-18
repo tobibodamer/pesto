@@ -157,7 +157,8 @@ requestAnimationFrame(frame);
 //   pesto.director.perform("dance")   make him do something
 //   pesto.director.perform("tap", { target: "cursor" })   or "throw", or "point"
 //   pesto.sight.look(pesto.world.foreground)              what he can see inside a window
-//   pesto.decider.last                the last silent decision and why
+//   pesto.decider.last                the decision model's last answer and why
+//   pesto.decider.backend             what decides his silent reactions right now
 //   pesto.trace.lines                 what his ears and the decision model did, while Debug is on
 Object.assign(window, {
   pesto: { stage, world, actor, director, journal, mind, decider, ears, sight, hands, jobs, config, trace, say: (text: string) => mind.wake({ kind: "said", text }) },
